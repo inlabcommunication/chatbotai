@@ -61,7 +61,11 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
   let chain = 1;
   if (!fromOwner) for (const x of recent) { if (x.from === "owner") break; chain++; }
   const chainBlocked = !fromOwner && !force && chain > CHAIN_MAX;
-  for (const agent of targets) {
+  // Messaggio nel gruppo per più agenti, con AGENT_GROUP_WAKE_SINGLE=1: UNA sola sveglia per tutti (la sessione risponde
+  // a turno per ciascuno). Evita la raffica di N avvii sulla stessa routine, che Claude rifiuta con 429.
+  const single = fromOwner && m.to === "group" && targets.length > 1 && process.env.AGENT_GROUP_WAKE_SINGLE === "1";
+  const fireList = single ? [targets[0]] : targets;
+  for (const agent of fireList) {
     const done = (r: Omit<WakeResult, "at">) => { out[agent] = { ...r, at: new Date().toISOString() }; };
     if (chainBlocked) { done({ status: "skipped", reason: `catena tra agenti troppo lunga (oltre ${CHAIN_MAX} messaggi senza il titolare): nessuna sveglia, scrivi tu per farli ripartire` }); continue; }
     if (voiceOnly && !force) { done({ status: "skipped", reason: "vocale: gli agenti non lo ascoltano, nessuna sveglia (usa la dettatura)" }); continue; }
@@ -80,7 +84,9 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
     if (LIMIT_PER_HOUR > 0 && !(await rateLimit(db, "wake", agent, LIMIT_PER_HOUR, 3600))) { done({ status: "skipped", reason: `limite di ${LIMIT_PER_HOUR} sveglie l'ora raggiunto (AGENT_WAKE_LIMIT_PER_HOUR su Vercel)` }); continue; }
     try {
       // Il testo non contiene il messaggio: l'agente lo legge con l'API della chat (autenticata)
-      const text = fromOwner
+      const text = single
+        ? `Chat InLab. Agenti destinatari: ${targets.join(", ")}. Nuovo messaggio del titolare nel gruppo (id ${id}). Leggi la chat con l'API per ciascuno di questi agenti e rispondi a turno per ciascuno, ognuno nella propria area.`
+        : fromOwner
         ? `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio ${m.audio && !m.text ? "vocale " : ""}${m.file ? "con allegato " : ""}del titolare${m.to === "group" ? " nel gruppo" : " per questo agente"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi.`
         : `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio del collega ${m.from}${m.to === "group" ? " nel gruppo (ti ha chiamato con @" + agent + ")" : " per te"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi solo se serve.`;
       const r = await fetch(url, {
@@ -104,6 +110,8 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
       done({ status: "failed", reason: "errore di rete verso la routine" });
     }
   }
+
+  if (single && out[targets[0]]) for (const a of targets.slice(1)) out[a] = { ...out[targets[0]], reason: out[targets[0]].status === "sent" ? "una sola sveglia per tutto il gruppo" : out[targets[0]].reason };
 
   const update: Record<string, WakeResult> = {};
   for (const [k, v] of Object.entries(out)) update[`wake.${k}`] = v;

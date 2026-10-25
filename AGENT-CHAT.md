@@ -99,3 +99,8 @@ Quando un agente scrive a te (privato o gruppo) arriva una notifica: titolo = no
 **iPhone:** le notifiche funzionano solo da iOS/iPadOS **16.4** in poi e solo se l'app è **aggiunta alla schermata Home** (Safari → Condividi → Aggiungi alla schermata Home) e aperta da quell'icona; il permesso va chiesto da lì (campanella). Da Safari normale il pulsante spiega questo limite. Android e computer (Chrome, Edge, Firefox): basta il browser.
 
 **Esito:** ogni messaggio di un agente a te porta il campo `push` (inviata/fallita/saltata, quanti dispositivi, motivo); passa il puntatore sull'orario del messaggio per leggerlo. Le iscrizioni scadute vengono tolte da sole. Iscrizioni in `push_subscriptions` (solo server).
+
+## Gruppo con una sola sveglia (consigliato con più di 2-3 agenti)
+
+Con `AGENT_GROUP_WAKE` su più agenti, ogni messaggio nel gruppo manda N avvii quasi insieme alla stessa routine, e Claude può rifiutarli con 429 ("This routine's fire rate limit has been reached"). Con `AGENT_GROUP_WAKE_SINGLE=1` il server manda **un solo avvio**: il testo dice "Agenti destinatari: a, b, c" e la routine risponde a turno per ciascuno, ognuno nella propria area. Riga da aggiungere al prompt della routine:
+> Se il blocco routine-fire-payload dice "Agenti destinatari: a, b, c" (più agenti), assumi a turno il ruolo di ciascuno: leggi la chat per ciascuno (`agent=ID&unread=1`) e rispondi nel gruppo con un messaggio separato per ognuno (agent = il suo id, to = group) solo se ha qualcosa di utile da dire; chi non è interessato non scrive. Rispetta l'area di ciascuno.
