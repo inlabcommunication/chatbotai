@@ -7,7 +7,7 @@
  *  GET   ?agent=seo&unread=1            → messaggi rivolti a `agent` (privati e di gruppo) che non ha ancora letto
  *  GET   ?agent=seo&attachment=<id messaggio> → scarica l'allegato del messaggio: {name, mime, b64}
  *  GET   ?agent=seo&since=ISO&limit=50  → oppure quelli successivi alla data `since`
- *        &history=20                    → aggiunge `history`: gli ultimi 20 messaggi delle sue conversazioni, come contesto
+ *        &history=N                     → `history`: gli ultimi N (default 20, 0 = nessuno) messaggi delle sue conversazioni, come contesto
  */
 import type { VercelRequest, VercelResponse } from "./_lib/types";
 import { FieldValue } from "firebase-admin/firestore";
@@ -78,7 +78,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       // Contesto: gli ultimi messaggi delle conversazioni dell'agente (con il titolare, nel gruppo, con altri agenti),
       // già letti o no, senza duplicare i non letti e senza segnarli come letti
-      const histN = Math.min(50, Math.max(0, Number(req.query.history) || 0));
+      // la cronologia c'è sempre (20 messaggi), anche con prompt vecchi; history=0 la toglie
+      const histRaw = req.query.history === undefined ? 20 : Number(req.query.history);
+      const histN = Math.min(50, Math.max(0, Number.isFinite(histRaw) ? histRaw : 20));
       let history: any[] = [];
       if (histN) {
         const ids = new Set(docs.map((m: any) => m.id));
@@ -89,7 +91,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined, file: m.file ? { name: m.file.name, mime: m.file.mime, size: m.file.size } : undefined }));
       }
       const messages = docs.map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined, file: m.file ? { name: m.file.name, mime: m.file.mime, size: m.file.size } : undefined }));
-      return res.status(200).json(histN ? { messages, history } : { messages });
+      return res.status(200).json(histN ? {
+        note: "messages = messaggi nuovi a cui rispondere. history = ultimi messaggi già scambiati (con il titolare, nel gruppo, con altri agenti): serve a capire il contesto, non risponderci. Tu parti da una sessione nuova a ogni sveglia e non ricordi le conversazioni precedenti: se ti chiedono di un discorso di prima, cercalo in history.",
+        messages, history,
+      } : { messages });
     }
     return res.status(405).json({ error: "Method not allowed" });
   } catch (e) {
