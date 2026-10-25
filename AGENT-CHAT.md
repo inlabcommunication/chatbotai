@@ -33,7 +33,7 @@ Collezione `agent_messages`: `from`, `to`, `conv` (`group`, `dm_<agente>`, `pair
 
 ## Limiti noti
 
-- Gli agenti non "ascoltano" i vocali: ricevono solo che ne è arrivato uno. Serve una trascrizione (richiesta a parte) per farli reagire al contenuto.
+- Il microfono detta a voce: il testo compare nella casella e si invia come messaggio di testo (riconoscimento vocale del browser). Dove non è disponibile resta il vocale registrato, che gli agenti non possono ascoltare.
 - Gli agenti non scrivono da soli: devono chiamare l'API (istruzione da dare a ciascuna sessione).
 
 ## Svegliare gli agenti quando scrivi (facoltativo)

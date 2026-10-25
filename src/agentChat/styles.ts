@@ -49,6 +49,7 @@ export const agentChatStyles = `
 .wa-composer textarea{flex:1;resize:none;max-height:120px;padding:10px 14px;border-radius:22px;background:#2a3942;border:none;outline:none;color:var(--wa-t);font:inherit;font-size:15px;line-height:1.35}
 .wa-round{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--wa-m)}
 .wa-round:hover{background:rgba(255,255,255,.06)}.wa-send{background:var(--wa-g)!important;color:#fff!important}.wa-danger{color:#ff7a6b!important}
+.wa-listening{background:#ff4d4d!important;color:#fff!important;animation:wa-blink 1.2s infinite}
 .wa-rec{flex:1;display:flex;align-items:center;gap:10px}.wa-rec-dot{width:10px;height:10px;border-radius:50%;background:#ff4d4d;animation:wa-blink 1s infinite}
 .wa-rec-t{font-variant-numeric:tabular-nums}.wa-rec-hint{flex:1;color:var(--wa-m);font-size:13px}
 @keyframes wa-blink{50%{opacity:.2}}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { addDoc, collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { ArrowLeft, Send, Network, MessageCircle, Search, Eye, Sparkles } from 'lucide-react';
+import { ArrowLeft, Mic, Send, Network, MessageCircle, Search, Eye, Sparkles } from 'lucide-react';
 import { auth, db } from './firebase';
 import {
   AGENTS, GROUP_ID, OWNER_ID, convInfo, convOf, demoMessages, infoOf, previewOf, shortOf,
@@ -213,17 +213,51 @@ const Thread = ({ messages, conv }: { messages: ChatMessage[]; conv: ConvInfo })
   );
 };
 
+// Riconoscimento vocale del browser (Chrome, Edge, Safari): trascrive mentre si parla
+const SpeechRec: any = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
+
 const Composer = ({ onText, onClip, onError, placeholder }: { onText: (t: string) => void; onClip: (a: AudioClip) => Promise<void> | void; onError: (m: string) => void; placeholder: string }) => {
   const [text, setText] = useState('');
-  const submit = () => { const t = text.trim(); if (!t) return; onText(t.slice(0, 4000)); setText(''); };
+  const [listening, setListening] = useState(false);
+  const rec = useRef<any>(null);
+  const base = useRef('');
+  useEffect(() => () => { try { rec.current?.stop(); } catch { /* già fermo */ } }, []);
+
+  const submit = () => {
+    const t = text.trim(); if (!t) return;
+    try { rec.current?.stop(); } catch { /* già fermo */ }
+    onText(t.slice(0, 4000)); setText('');
+  };
+
+  // Tocca per dettare, tocca di nuovo per fermare: il testo resta nella casella, modificabile, e si invia con il pulsante
+  const dictate = () => {
+    if (listening) { try { rec.current?.stop(); } catch { /* già fermo */ } return; }
+    const r = new SpeechRec();
+    r.lang = 'it-IT'; r.continuous = true; r.interimResults = true;
+    base.current = text ? text.trimEnd() + ' ' : '';
+    r.onresult = (e: any) => {
+      let t = '';
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      setText((base.current + t).slice(0, 4000));
+    };
+    r.onerror = (e: any) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') onError('Microfono non consentito: autorizza il microfono nelle impostazioni del browser.');
+      else if (e.error !== 'no-speech' && e.error !== 'aborted') onError('Dettatura non riuscita (' + e.error + ').');
+    };
+    r.onend = () => setListening(false);
+    rec.current = r;
+    try { r.start(); setListening(true); } catch { setListening(false); }
+  };
+
   return (
     <div className="wa-composer">
-      <textarea rows={1} value={text} placeholder={placeholder} maxLength={4000}
+      <textarea rows={1} value={text} placeholder={listening ? 'Sto ascoltando… parla' : placeholder} maxLength={4000}
         onChange={e => setText(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }} />
-      {text.trim()
-        ? <button className="wa-round wa-send" onClick={submit} aria-label="Invia"><Send size={19} /></button>
-        : <Recorder onClip={onClip} onError={onError} />}
+      {SpeechRec
+        ? <button className={`wa-round${listening ? ' wa-listening' : ''}`} onClick={dictate} aria-label={listening ? 'Ferma la dettatura' : 'Detta a voce'} title={listening ? 'Ferma' : 'Detta a voce'}><Mic size={20} /></button>
+        : !text.trim() && <Recorder onClip={onClip} onError={onError} />}
+      {text.trim() && <button className="wa-round wa-send" onClick={submit} aria-label="Invia"><Send size={19} /></button>}
     </div>
   );
 };
