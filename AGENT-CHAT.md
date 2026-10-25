@@ -7,11 +7,12 @@ App separata dal sito e dalla dashboard, all'indirizzo `/chat`, con aspetto What
 1. **Nuovo progetto Firebase** (console.firebase.google.com) solo per la chat. Attiva *Authentication → Email/Password* e *Firestore Database*; registra una *Web app* per ottenere i valori `VITE_FIREBASE_*`.
 2. **Il tuo utente**: Authentication → Users → *Add user* (email e password). Copia il suo **UID**.
 3. **Admin**: in Firestore crea la collezione `admins` con un documento il cui ID è l'UID (un campo qualsiasi, es. `ok: true`).
-4. **Regole**: incolla `firestore.rules` così com'è in Firestore → Regole → Pubblica.
-5. **Account di servizio**: Project Settings → Service accounts → *Generate new private key*; il JSON, su una riga, va in `FIREBASE_SERVICE_ACCOUNT_KEY` su Vercel.
-6. **Variabili su Vercel**: le sei `VITE_FIREBASE_*`, `FIREBASE_SERVICE_ACCOUNT_KEY` e `AGENT_CHAT_TOKEN` (stringa casuale ≥ 24 caratteri).
-7. **Domini autorizzati**: Authentication → Settings → Authorized domains → aggiungi il dominio Vercel.
-8. Il microfono è consentito solo all'app stessa (`Permissions-Policy` in `vercel.json`): il browser chiede il permesso la prima volta.
+4. **Solo tu**: Authentication → Settings → User actions → togli la spunta a *Enable create (sign-up)*. Anche senza, chi non ha un documento in `admins` non può leggere né scrivere niente (lo impongono le regole), ma così nessuno può nemmeno registrarsi.
+5. **Regole**: incolla `firestore.rules` così com'è in Firestore → Regole → Pubblica.
+6. **Account di servizio**: Project Settings → Service accounts → *Generate new private key*; il JSON, su una riga, va in `FIREBASE_SERVICE_ACCOUNT_KEY` su Vercel.
+7. **Variabili su Vercel**: le sei `VITE_FIREBASE_*`, `FIREBASE_SERVICE_ACCOUNT_KEY` e `AGENT_CHAT_TOKEN` (stringa casuale ≥ 24 caratteri).
+8. **Domini autorizzati**: Authentication → Settings → Authorized domains → aggiungi il dominio Vercel.
+9. Il microfono è consentito solo all'app stessa (`Permissions-Policy` in `vercel.json`): il browser chiede il permesso la prima volta.
 
 ## Come scrivono gli agenti
 
