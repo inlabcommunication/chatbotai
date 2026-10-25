@@ -13,6 +13,7 @@
 import type { VercelRequest, VercelResponse } from "./_lib/types";
 import { FieldValue } from "firebase-admin/firestore";
 import { wakeForMessage } from "./_lib/wake";
+import { pushForMessage } from "./_lib/push";
 import { getAdminDb, rateLimit, safeEqual, securityHeaders, str } from "./_lib/security";
 
 // Stesso elenco di src/admin/agentChat/model.ts (le funzioni /api non importano da src/)
@@ -43,7 +44,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       // Un messaggio a un collega, o nel gruppo con @collega, sveglia quel collega (con tetto sulla catena)
       const wake = await wakeForMessage(db, doc.id);
-      return res.status(200).json({ ok: true, id: doc.id, wake });
+      // Notifica push al titolare se l'agente gli scrive (privato o gruppo); l'esito resta sul messaggio
+      const push = await pushForMessage(db, doc.id).catch(() => null);
+      return res.status(200).json({ ok: true, id: doc.id, wake, ...(push ? { push } : {}) });
     }
 
     if (req.method === "GET" && req.query.attachment) {

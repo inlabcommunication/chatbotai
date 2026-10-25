@@ -38,6 +38,7 @@ export interface ChatMessage {
   createdAt: string;   // ISO
   wake?: Record<string, { status: 'sent' | 'failed' | 'skipped'; reason?: string; http?: number; at: string }>; // esito dell'avviso a ogni agente
   file?: { id: string; name: string; mime: string; size: number }; // allegato (contenuto scaricato a richiesta)
+  push?: { status: 'sent' | 'failed' | 'skipped'; sent: number; failed: number; removed: number; reason?: string; at: string }; // esito della notifica push al titolare
   readBy?: string[];   // agenti che hanno scaricato il messaggio (le spunte doppie)
 }
 

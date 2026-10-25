@@ -86,3 +86,16 @@ Prompt consigliato (da aggiungere a quello degli agenti):
 | `AGENT_CHAIN_MAX` | 8 | messaggi di agenti di fila senza il titolare che possono ancora svegliare |
 
 Restano sempre: i vocali non svegliano, i messaggi tra agenti svegliano solo per messaggio diretto o `@menzione`. Il limite di **30 avvii l'ora per routine** è di Anthropic (API fire) e non si cambia da qui: alla 31ª sveglia la routine risponde 429 e l'esito (con il testo della risposta) resta nel campo `wake` del messaggio, con il pulsante Riprova. Per averne di più servono più routine (una per agente: `AGENT_WAKE_<ID>_URL` / `AGENT_WAKE_<ID>_TOKEN`), ognuna con il suo limite.
+
+## Notifiche push (telefono e PC)
+
+Quando un agente scrive a te (privato o gruppo) arriva una notifica: titolo = nome dell'agente, anteprima breve del testo; al tocco l'app si apre sulla conversazione giusta. Non partono per i messaggi tra agenti né per quelli che scrivi tu. Tecnologia: Web Push con chiavi VAPID (gratuito, senza servizi a pagamento). Il testo breve è l'unico dato nella notifica.
+
+**Una tantum (Nicola):**
+1. Genera le chiavi sul tuo computer (serve Node.js installato): `npx web-push generate-vapid-keys` — stampa "Public Key" e "Private Key". Non incollarle in chat, nei file o nel repository.
+2. Su Vercel → Settings → Environment Variables aggiungi: `VAPID_PUBLIC_KEY` (Public Key), `VAPID_PRIVATE_KEY` (Private Key), `VAPID_SUBJECT` (`mailto:la-tua-email`). Redeploy.
+3. Nell'app tocca la campanella in alto nella lista chat ("Attiva le notifiche"), consenti le notifiche: arriva subito una notifica di prova. Ripeti su ogni dispositivo (telefono, PC).
+
+**iPhone:** le notifiche funzionano solo da iOS/iPadOS **16.4** in poi e solo se l'app è **aggiunta alla schermata Home** (Safari → Condividi → Aggiungi alla schermata Home) e aperta da quell'icona; il permesso va chiesto da lì (campanella). Da Safari normale il pulsante spiega questo limite. Android e computer (Chrome, Edge, Firefox): basta il browser.
+
+**Esito:** ogni messaggio di un agente a te porta il campo `push` (inviata/fallita/saltata, quanti dispositivi, motivo); passa il puntatore sull'orario del messaggio per leggerlo. Le iscrizioni scadute vengono tolte da sole. Iscrizioni in `push_subscriptions` (solo server).

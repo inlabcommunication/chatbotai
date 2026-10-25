@@ -11,6 +11,7 @@ export const agentChatStyles = `
 .wa-shell{flex:1;display:flex;min-height:0}
 .wa-list{width:360px;max-width:42%;display:flex;flex-direction:column;background:var(--wa-panel);border-right:1px solid var(--wa-line)}
 .wa-list-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 6px;font-size:20px;font-weight:700}
+.wa-head-actions{display:flex;gap:8px;align-items:center}
 .wa-exit{font-size:12px;font-weight:500;color:var(--wa-m)!important;padding:4px 10px;border:1px solid var(--wa-line)!important;border-radius:100px}
 .wa-search{display:flex;align-items:center;gap:8px;margin:6px 12px 8px;padding:7px 12px;background:var(--wa-head);border-radius:10px;color:var(--wa-m)}
 .wa-search input{flex:1;background:none;border:none;outline:none;color:var(--wa-t);font-size:14px}

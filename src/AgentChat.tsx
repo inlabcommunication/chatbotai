@@ -8,6 +8,7 @@ import {
 } from './agentChat/model';
 import { Recorder, VoiceBubble } from './agentChat/Voice';
 import { InteractionMap } from './agentChat/InteractionMap';
+import { NotifyButton } from './agentChat/Notify';
 import { ACCEPT, FileBubble, fmtSize, prepareFile, type PendingFile } from './agentChat/Attach';
 import { agentChatStyles } from './agentChat/styles';
 
@@ -90,6 +91,17 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
     }, () => setError('Impossibile leggere i messaggi. Controlla che le regole Firestore siano state pubblicate (vedi docs/sviluppo/AGENT-CHAT.md).'));
   }, []);
 
+  // Tocco su una notifica: apre la conversazione giusta (indirizzo ?conv=... oppure messaggio dal service worker)
+  useEffect(() => {
+    const valid = (c: string) => /^(group|dm_[a-z]+|pair_[a-z]+_[a-z]+)$/.test(c);
+    const open = (c: string) => { if (valid(c)) { setActive(c); setMobileChat(true); setView('chat'); } };
+    const q = new URLSearchParams(window.location.search).get('conv');
+    if (q) { open(q); window.history.replaceState(null, '', window.location.pathname); }
+    const h = (e: MessageEvent) => { if (e.data?.type === 'open-conv') open(String(e.data.conv || '')); };
+    navigator.serviceWorker?.addEventListener('message', h);
+    return () => navigator.serviceWorker?.removeEventListener('message', h);
+  }, []);
+
   const messages = demo ? demoMessages() : live;
 
   const byConv = useMemo(() => {
@@ -162,7 +174,7 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
       ) : (
         <div className="wa-shell">
           <aside className="wa-list">
-            <div className="wa-list-head">Chat degli agenti{onLogout && <button onClick={onLogout} className="wa-exit">Esci</button>}</div>
+            <div className="wa-list-head">Chat degli agenti<span className="wa-head-actions"><NotifyButton onMessage={setError} />{onLogout && <button onClick={onLogout} className="wa-exit">Esci</button>}</span></div>
             <label className="wa-search"><Search size={15} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Cerca un agente" /></label>
             <div className="wa-scroll">
               {sorted.head.filter(match).map(c => <ConvRow key={c.id} c={c} last={byConv.get(c.id)?.at(-1)} unread={unread(c.id)} active={c.id === active} onClick={() => open(c.id)} />)}
@@ -227,7 +239,7 @@ const Thread = ({ messages, conv, onRetry }: { messages: ChatMessage[]; conv: Co
                 {mine && wakeProblems(m.wake).length > 0 && (
                   <div className="wa-wakeerr">⚠ Agente non avvisato: {wakeProblems(m.wake).join(' · ')} <button onClick={() => onRetry(m.id)}>Riprova</button></div>
                 )}
-                <time>{hhmm(m.createdAt)}{mine && <Ticks m={m} />}</time>
+                <time title={!mine && m.push ? (m.push.status === 'sent' ? `Notifica inviata a ${m.push.sent} dispositivi` : `Notifica non inviata: ${m.push.reason || 'errore'}`) : undefined}>{hhmm(m.createdAt)}{mine && <Ticks m={m} />}</time>
               </div>
             </div>
           </div>
