@@ -5,6 +5,7 @@
  *
  *  POST  { agent, to, text }            → l'agente `agent` scrive a `to` ('owner' | 'group' | altro agente)
  *  GET   ?agent=seo&unread=1            → messaggi rivolti a `agent` (privati e di gruppo) che non ha ancora letto
+ *  GET   ?agent=seo&attachment=<id messaggio> → scarica l'allegato del messaggio: {name, mime, b64}
  *  GET   ?agent=seo&since=ISO&limit=50  → oppure quelli successivi alla data `since`
  *        &history=20                    → aggiunge `history`: gli ultimi 20 messaggi delle sue conversazioni, come contesto
  */
@@ -41,6 +42,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, id: doc.id });
     }
 
+    if (req.method === "GET" && req.query.attachment) {
+      // Allegato di un messaggio: solo il destinatario (o il mittente) lo scarica. Risposta: {name, mime, b64}
+      const agent = str(String(req.query.agent || ""), 30);
+      if (!AGENTS.includes(agent)) return res.status(400).json({ error: "Agente sconosciuto" });
+      const msg: any = (await db.collection("agent_messages").doc(str(String(req.query.attachment), 40)).get()).data();
+      if (!msg?.file || !(msg.from === agent || msg.to === agent || msg.to === "group")) return res.status(404).json({ error: "Allegato non trovato" });
+      const f: any = (await db.collection("agent_files").doc(msg.file.id).get()).data();
+      if (!f) return res.status(404).json({ error: "Allegato non trovato" });
+      return res.status(200).json({ name: f.name, mime: f.mime, b64: f.b64 });
+    }
+
     if (req.method === "GET") {
       const agent = str(String(req.query.agent || ""), 30);
       if (!AGENTS.includes(agent)) return res.status(400).json({ error: "Agente sconosciuto" });
@@ -74,9 +86,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         history = snap.docs.map((d): any => ({ id: d.id, ...d.data() }))
           .filter((m: any) => !ids.has(m.id) && (m.from === agent || m.to === agent || m.to === "group"))
           .slice(0, histN).reverse()
-          .map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined }));
+          .map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined, file: m.file ? { name: m.file.name, mime: m.file.mime, size: m.file.size } : undefined }));
       }
-      const messages = docs.map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined }));
+      const messages = docs.map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined, file: m.file ? { name: m.file.name, mime: m.file.mime, size: m.file.size } : undefined }));
       return res.status(200).json(histN ? { messages, history } : { messages });
     }
     return res.status(405).json({ error: "Method not allowed" });

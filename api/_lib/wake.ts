@@ -52,7 +52,7 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
     if (!(await rateLimit(db, "wake", agent, 30, 3600))) { done({ status: "skipped", reason: "limite di 30 sveglie l'ora raggiunto" }); continue; }
     try {
       // Il testo non contiene il messaggio: l'agente lo legge con l'API della chat (autenticata)
-      const text = `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio ${m.audio && !m.text ? "vocale " : ""}del titolare${m.to === "group" ? " nel gruppo" : " per questo agente"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi.`;
+      const text = `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio ${m.audio && !m.text ? "vocale " : ""}${m.file ? "con allegato " : ""}del titolare${m.to === "group" ? " nel gruppo" : " per questo agente"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi.`;
       const r = await fetch(url, {
         method: "POST",
         headers: {

@@ -37,6 +37,7 @@ export interface ChatMessage {
   audio?: AudioClip;
   createdAt: string;   // ISO
   wake?: Record<string, { status: 'sent' | 'failed' | 'skipped'; reason?: string; http?: number; at: string }>; // esito dell'avviso a ogni agente
+  file?: { id: string; name: string; mime: string; size: number }; // allegato (contenuto scaricato a richiesta)
   readBy?: string[];   // agenti che hanno scaricato il messaggio (le spunte doppie)
 }
 
@@ -74,7 +75,7 @@ export function pairMembers(id: string): string[] {
   return id.replace(/^pair_/, '').split('_').slice(0, 2);
 }
 
-export const previewOf = (m: ChatMessage): string => m.audio ? `🎤 Messaggio vocale (${fmtSec(m.audio.sec)})` : (m.text || '');
+export const previewOf = (m: ChatMessage): string => m.audio ? `🎤 Messaggio vocale (${fmtSec(m.audio.sec)})` : m.file ? `📎 ${m.file.name}${m.text ? ' · ' + m.text : ''}` : (m.text || '');
 
 export const fmtSec = (s: number): string => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 

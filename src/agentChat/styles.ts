@@ -43,6 +43,15 @@ export const agentChatStyles = `
 .wa-bubble{min-width:84px;padding-bottom:18px}
 .wa-wakeerr{margin:4px 0 6px;padding:5px 8px;border-radius:6px;background:rgba(255,77,77,.14);color:#ffb4b4;font-size:12px;line-height:1.35}
 .wa-wakeerr button{margin-left:6px;color:#53bdeb!important;text-decoration:underline}
+.wa-composer-wrap{background:var(--wa-head)}
+.wa-composer-wrap .wa-composer{padding-top:8px}
+.wa-chip{display:flex;align-items:center;gap:8px;margin:8px 14px 0;padding:7px 10px;border-radius:10px;background:#2a3942;font-size:13px;color:var(--wa-t)}
+.wa-chip span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wa-chip button{display:flex;color:var(--wa-m)}
+.wa-img{display:block;margin:2px 0 4px}.wa-img img{display:block;max-width:100%;max-height:300px;border-radius:6px}
+.wa-file{display:flex;align-items:center;gap:10px;width:100%;min-width:220px;margin:2px 0 6px;padding:9px 10px;border-radius:8px;background:rgba(0,0,0,.2);text-align:left}
+.wa-file span{flex:1;min-width:0;display:flex;flex-direction:column}.wa-file b{font-weight:500;font-size:13.5px;overflow-wrap:anywhere}.wa-file i{font-style:normal;font-size:11.5px;color:var(--wa-m)}
+.wa-muted{color:var(--wa-m);font-size:13px}
 .wa-ticks{display:inline-block;vertical-align:-1px;margin-left:4px}
 .wa-voice+.wa-text,.wa-voice{margin-bottom:2px}
 .wa-voice{display:flex;align-items:center;gap:10px;min-width:230px;padding:4px 40px 8px 0}

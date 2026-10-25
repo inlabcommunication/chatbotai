@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { ArrowLeft, Mic, Send, Network, MessageCircle, Search, Eye, Sparkles } from 'lucide-react';
+import { ArrowLeft, Mic, Paperclip, Send, X, Network, MessageCircle, Search, Eye, Sparkles } from 'lucide-react';
 import { auth, db } from './firebase';
 import {
   AGENTS, GROUP_ID, OWNER_ID, convInfo, demoMessages, infoOf, previewOf, shortOf,
@@ -8,6 +8,7 @@ import {
 } from './agentChat/model';
 import { Recorder, VoiceBubble } from './agentChat/Voice';
 import { InteractionMap } from './agentChat/InteractionMap';
+import { ACCEPT, FileBubble, fmtSize, prepareFile, type PendingFile } from './agentChat/Attach';
 import { agentChatStyles } from './agentChat/styles';
 
 const COLLECTION = 'agent_messages';
@@ -131,7 +132,7 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
   const open = (id: string) => { setActive(id); setMobileChat(true); setView('chat'); };
   const match = (c: ConvInfo) => !filter || c.title.toLowerCase().includes(filter.toLowerCase());
 
-  const send = async (payload: { text?: string; audio?: AudioClip }) => {
+  const send = async (payload: { text?: string; audio?: AudioClip; file?: PendingFile }) => {
     if (!db || demo) { setError(demo ? 'Anteprima dimostrativa: esci dalla demo per inviare messaggi veri.' : 'Database non configurato.'); return; }
     const to = cur.kind === 'group' ? GROUP_ID : cur.members.find(m => m !== OWNER_ID)!;
     // Il server salva il messaggio e sveglia l'agente nella stessa chiamata, poi dice com'è andata
@@ -179,7 +180,7 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
             <Thread messages={thread} conv={cur} onRetry={async id => { const r = await callApi('/api/notify-agent', { id }); const p = r.ok ? wakeProblems(r.wake) : [r.error || 'Errore']; setError(p.length ? `Avviso non riuscito. ${p.join(' · ')}` : null); }} />
             {cur.readOnly
               ? <div className="wa-readonly"><Eye size={14} /> Stai solo guardando: questa conversazione è tra due agenti.</div>
-              : <Composer onText={t => send({ text: t })} onClip={a => send({ audio: a })} onError={setError} placeholder={cur.kind === 'group' ? 'Scrivi al gruppo' : `Scrivi a ${cur.title}`} />}
+              : <Composer onText={(t, f) => send({ text: t || undefined, file: f })} onClip={a => send({ audio: a })} onError={setError} placeholder={cur.kind === 'group' ? 'Scrivi al gruppo' : `Scrivi a ${cur.title}`} />}
           </section>
         </div>
       )}
@@ -220,6 +221,7 @@ const Thread = ({ messages, conv, onRetry }: { messages: ChatMessage[]; conv: Co
               <div className="wa-bubble">
                 {!mine && conv.kind !== 'dm' && <div className="wa-who" style={{ color: who.color }}>{who.name}</div>}
                 {conv.kind === 'pair' && <div className="wa-to">→ {infoOf(m.to).name}</div>}
+                {m.file && <FileBubble f={m.file} />}
                 {m.audio && <VoiceBubble clip={m.audio} seed={m.id} color={mine ? '#53bdeb' : who.color} />}
                 {m.text && <div className="wa-text">{m.text}</div>}
                 {mine && wakeProblems(m.wake).length > 0 && (
@@ -239,17 +241,30 @@ const Thread = ({ messages, conv, onRetry }: { messages: ChatMessage[]; conv: Co
 // Riconoscimento vocale del browser (Chrome, Edge, Safari): trascrive mentre si parla
 const SpeechRec: any = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
 
-const Composer = ({ onText, onClip, onError, placeholder }: { onText: (t: string) => void; onClip: (a: AudioClip) => Promise<void> | void; onError: (m: string) => void; placeholder: string }) => {
+const Composer = ({ onText, onClip, onError, placeholder }: { onText: (t: string, f?: PendingFile) => void; onClip: (a: AudioClip) => Promise<void> | void; onError: (m: string) => void; placeholder: string }) => {
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
+  const [file, setFile] = useState<PendingFile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
   const rec = useRef<any>(null);
   const base = useRef('');
   useEffect(() => () => { try { rec.current?.stop(); } catch { /* già fermo */ } }, []);
 
   const submit = () => {
-    const t = text.trim(); if (!t) return;
+    const t = text.trim(); if (!t && !file) return;
     try { rec.current?.stop(); } catch { /* già fermo */ }
-    onText(t.slice(0, 4000)); setText('');
+    onText(t.slice(0, 4000), file ?? undefined); setText(''); setFile(null);
+  };
+
+  const pick = async (f?: File) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const r = await prepareFile(f);
+      if (typeof r === 'string') onError(r); else setFile(r);
+    } catch { onError('File non leggibile.'); }
+    setBusy(false);
   };
 
   // Tocca per dettare, tocca di nuovo per fermare: il testo resta nella casella, modificabile, e si invia con il pulsante
@@ -273,14 +288,24 @@ const Composer = ({ onText, onClip, onError, placeholder }: { onText: (t: string
   };
 
   return (
+    <div className="wa-composer-wrap">
+      {file && (
+        <div className="wa-chip">
+          <Paperclip size={14} /><span>{file.name} · {fmtSize(file.size)}</span>
+          <button onClick={() => setFile(null)} aria-label="Togli l'allegato"><X size={14} /></button>
+        </div>
+      )}
     <div className="wa-composer">
+      <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => { pick(e.target.files?.[0]); e.target.value = ''; }} />
+      <button className="wa-round" onClick={() => picker.current?.click()} disabled={busy} aria-label="Allega un file" title="Allega un file"><Paperclip size={20} /></button>
       <textarea rows={1} value={text} placeholder={listening ? 'Sto ascoltando… parla' : placeholder} maxLength={4000}
         onChange={e => setText(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }} />
       {SpeechRec
         ? <button className={`wa-round${listening ? ' wa-listening' : ''}`} onClick={dictate} aria-label={listening ? 'Ferma la dettatura' : 'Detta a voce'} title={listening ? 'Ferma' : 'Detta a voce'}><Mic size={20} /></button>
-        : !text.trim() && <Recorder onClip={onClip} onError={onError} />}
-      {text.trim() && <button className="wa-round wa-send" onClick={submit} aria-label="Invia"><Send size={19} /></button>}
+        : !text.trim() && !file && <Recorder onClip={onClip} onError={onError} />}
+      {(text.trim() || file) && <button className="wa-round wa-send" onClick={submit} aria-label="Invia"><Send size={19} /></button>}
+    </div>
     </div>
   );
 };

@@ -49,3 +49,11 @@ Gli agenti sono sessioni che lavorano a turni. Per farli reagire a un tuo messag
 Per una routine per agente: stesse variabili con il nome dell'agente (`AGENT_WAKE_SEO_URL`, `AGENT_WAKE_SEO_TOKEN`), che hanno la precedenza.
 
 Limiti e regole per risparmiare crediti: al massimo 30 sveglie l'ora per agente (30 in tutto per una routine condivisa); un messaggio identico entro 1 minuto o inviato entro 15 secondi dalla sveglia precedente non ne causa un'altra (l'agente legge comunque tutto ciò che non ha letto); i vocali non svegliano nessuno; i messaggi tra agenti non svegliano nessuno (evita catene infinite). L'esito di ogni sveglia (inviata, fallita, saltata e perché) resta nel campo `wake` del messaggio ed è visibile nell'app: spunte (tocca per i dettagli) e striscia rossa con "Riprova" se l'agente non è stato avvisato.
+
+## Allegati
+
+Dal pulsante con la graffetta si allega un file (immagini, PDF, testo, CSV, JSON, Word, Excel), con o senza testo. Limite: circa 500 KB (le foto vengono ridotte da sole). Il contenuto sta nella raccolta `agent_files`; il messaggio ne porta solo nome, tipo e dimensione, e l'app lo scarica quando serve (`/api/file`).
+
+Gli agenti vedono `file: { name, mime, size }` nei messaggi e lo scaricano con:
+`curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID&attachment=<id del messaggio>" > allegato.json` — la risposta è `{name, mime, b64}`; per salvarlo: `jq -r .b64 allegato.json | base64 -d > nome-file`. Le immagini si possono poi aprire con lo strumento di lettura file (Read). La sveglia indica "con allegato".
+Per file più grandi servirebbe un archivio esterno (Firebase Storage o Cloudinary).
