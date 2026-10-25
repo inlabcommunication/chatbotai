@@ -87,7 +87,13 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
         },
         body: JSON.stringify({ text }),
       });
-      done(r.ok ? { status: "sent", http: r.status } : { status: "failed", http: r.status, reason: `la routine ha risposto ${r.status}` });
+      if (r.ok) { done({ status: "sent", http: r.status }); }
+      else {
+        // il motivo scritto dal servizio (e l'attesa consigliata) aiutano a capire quale limite è scattato
+        const detail = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+        const retry = r.headers.get("retry-after");
+        done({ status: "failed", http: r.status, reason: `la routine ha risposto ${r.status}${retry ? ` (riprova tra ${retry}s)` : ""}${detail ? `: ${detail}` : ""}` });
+      }
     } catch {
       done({ status: "failed", reason: "errore di rete verso la routine" });
     }
