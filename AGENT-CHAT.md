@@ -104,3 +104,10 @@ Quando un agente scrive a te (privato o gruppo) arriva una notifica: titolo = no
 
 Con `AGENT_GROUP_WAKE` su più agenti, ogni messaggio nel gruppo manda N avvii quasi insieme alla stessa routine, e Claude può rifiutarli con 429 ("This routine's fire rate limit has been reached"). Con `AGENT_GROUP_WAKE_SINGLE=1` il server manda **un solo avvio**: il testo dice "Agenti destinatari: a, b, c" e la routine risponde a turno per ciascuno, ognuno nella propria area. Riga da aggiungere al prompt della routine:
 > Se il blocco routine-fire-payload dice "Agenti destinatari: a, b, c" (più agenti), assumi a turno il ruolo di ciascuno: leggi la chat per ciascuno (`agent=ID&unread=1`) e rispondi nel gruppo con un messaggio separato per ognuno (agent = il suo id, to = group) solo se ha qualcosa di utile da dire; chi non è interessato non scrive. Rispetta l'area di ciascuno.
+
+## Chi risponde nel gruppo
+
+Una domanda generica nel gruppo la prende **solo il Direttore** (`AGENT_GROUP_WAKE`, predefinito `direttore`). Per far rispondere altri agenti li chiami per nome nel messaggio: `@seo @blog potete fare questo?` svegli solo loro (più il Direttore). Anche il Direttore può chiamare un collega con `@id`. Gli ids: `sito`, `direttore`, `seo`, `blog`, `performance`, `competitor`, `sicurezza`.
+
+Riga da aggiungere al prompt della routine:
+> GRUPPO: se il titolare fa una domanda generica nel gruppo (non cita nessuno e non riguarda solo un'area) risponde SOLO il Direttore, che decide chi coinvolgere e chiama i colleghi con @id. Gli altri agenti rispondono nel gruppo solo se sono chiamati per nome (@il-tuo-id) o se la domanda riguarda inequivocabilmente solo la loro area. Se non sei chiamato e non sei il Direttore, non scrivere.

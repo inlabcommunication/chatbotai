@@ -9,9 +9,18 @@ const FIRE_PREFIX = "https://api.anthropic.com/v1/claude_code/routines/";
 
 export interface WakeResult { status: "sent" | "failed" | "skipped"; reason?: string; http?: number; at: string }
 
-/** Agenti da svegliare per un messaggio: il destinatario, oppure quelli di AGENT_GROUP_WAKE per il gruppo. */
-export function targetsFor(to: string): string[] {
-  if (to === "group") return (process.env.AGENT_GROUP_WAKE || "").split(",").map(s => s.trim()).filter(a => AGENTS.includes(a));
+/** Agenti chiamati per nome (@id) in un testo. */
+const mentioned = (text: string, except = ""): string[] => AGENTS.filter(a => a !== except && new RegExp(`@${a}\\b`, "i").test(text || ""));
+
+/**
+ * Agenti da svegliare per un messaggio del TITOLARE: in privato il destinatario; nel gruppo chi risponde di default
+ * (AGENT_GROUP_WAKE, predefinito "direttore": una domanda generica la prende lui) più chi viene chiamato con @id.
+ */
+export function targetsFor(to: string, text = ""): string[] {
+  if (to === "group") {
+    const base = (process.env.AGENT_GROUP_WAKE ?? "direttore").split(",").map(s => s.trim()).filter(a => AGENTS.includes(a));
+    return [...new Set([...base, ...mentioned(text)])];
+  }
   return AGENTS.includes(to) ? [to] : [];
 }
 
@@ -21,7 +30,7 @@ export function targetsFor(to: string): string[] {
  */
 export function agentTargetsFor(from: string, to: string, text: string): string[] {
   if (to === "owner") return [];
-  if (to === "group") return AGENTS.filter(a => a !== from && new RegExp(`@${a}\\b`, "i").test(text || ""));
+  if (to === "group") return mentioned(text, from);
   return AGENTS.includes(to) && to !== from ? [to] : [];
 }
 
@@ -49,9 +58,9 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
   const fromOwner = m.from === "owner";
   if (!fromOwner && !AGENTS.includes(m.from)) return out;
 
-  const targets = fromOwner ? targetsFor(m.to) : agentTargetsFor(m.from, m.to, m.text || "");
+  const targets = fromOwner ? targetsFor(m.to, m.text || "") : agentTargetsFor(m.from, m.to, m.text || "");
   if (!targets.length && fromOwner) {
-    out[m.to] = { status: "skipped", reason: "nessun agente da svegliare (per il gruppo imposta AGENT_GROUP_WAKE)", at: new Date().toISOString() };
+    out[m.to] = { status: "skipped", reason: "nessun agente da svegliare (per il gruppo imposta AGENT_GROUP_WAKE o chiama qualcuno con @id)", at: new Date().toISOString() };
   }
   const voiceOnly = fromOwner && !!m.audio && !m.text;
   // ultimi messaggi, per riconoscere ripetizioni, raffiche e catene (si filtra qui: niente indice composto)

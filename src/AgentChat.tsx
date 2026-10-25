@@ -192,7 +192,7 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
             <Thread messages={thread} conv={cur} onRetry={async id => { const r = await callApi('/api/notify-agent', { id }); const p = r.ok ? wakeProblems(r.wake) : [r.error || 'Errore']; setError(p.length ? `Avviso non riuscito. ${p.join(' · ')}` : null); }} />
             {cur.readOnly
               ? <div className="wa-readonly"><Eye size={14} /> Stai solo guardando: questa conversazione è tra due agenti.</div>
-              : <Composer onText={(t, f) => send({ text: t || undefined, file: f })} onClip={a => send({ audio: a })} onError={setError} placeholder={cur.kind === 'group' ? 'Scrivi al gruppo' : `Scrivi a ${cur.title}`} />}
+              : <Composer onText={(t, f) => send({ text: t || undefined, file: f })} onClip={a => send({ audio: a })} onError={setError} placeholder={cur.kind === 'group' ? 'Scrivi al gruppo (@seo per chiamare un agente)' : `Scrivi a ${cur.title}`} />}
           </section>
         </div>
       )}
