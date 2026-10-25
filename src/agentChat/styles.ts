@@ -37,9 +37,11 @@ export const agentChatStyles = `
 .wa-bubble{max-width:min(560px,82%);padding:6px 9px 4px;border-radius:9px;background:var(--wa-in);box-shadow:0 1px .5px rgba(0,0,0,.3);position:relative}
 .wa-msg.out .wa-bubble{background:var(--wa-out)}
 .wa-who{font-size:12.5px;font-weight:600;margin-bottom:2px}.wa-to{font-size:11.5px;color:var(--wa-m);margin-bottom:2px}
-.wa-text{font-size:14.5px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;padding-right:46px}
-.wa-bubble time{display:block;text-align:right;font-size:11px;color:rgba(233,237,239,.6);margin-top:-12px;float:right;position:relative;top:2px}
-.wa-wakeerr{margin-top:4px;padding:5px 8px;border-radius:6px;background:rgba(255,77,77,.14);color:#ffb4b4;font-size:12px;line-height:1.35}
+.wa-text{font-size:14.5px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+.wa-text::after{content:'';display:inline-block;width:64px}
+.wa-bubble time{position:absolute;right:9px;bottom:4px;font-size:11px;color:rgba(233,237,239,.6);white-space:nowrap}
+.wa-bubble{min-width:84px;padding-bottom:18px}
+.wa-wakeerr{margin:4px 0 6px;padding:5px 8px;border-radius:6px;background:rgba(255,77,77,.14);color:#ffb4b4;font-size:12px;line-height:1.35}
 .wa-wakeerr button{margin-left:6px;color:#53bdeb!important;text-decoration:underline}
 .wa-ticks{display:inline-block;vertical-align:-1px;margin-left:4px}
 .wa-voice+.wa-text,.wa-voice{margin-bottom:2px}
