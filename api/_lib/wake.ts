@@ -28,10 +28,16 @@ export function agentTargetsFor(from: string, to: string, text: string): string[
 // Massimo di messaggi di agenti di fila, senza un messaggio del titolare in mezzo, che possono ancora svegliare qualcuno
 const CHAIN_MAX = Math.max(1, Number(process.env.AGENT_CHAIN_MAX) || 8);
 
+// Numero da una variabile d'ambiente (vuota o non valida = valore predefinito; 0 è un valore valido)
+const envNum = (name: string, def: number) => { const v = process.env[name]; return v !== undefined && v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : def; };
+
+// Tetto di sveglie l'ora per agente (AGENT_WAKE_LIMIT_PER_HOUR, 0 = nessun limite nostro; default 30)
+const LIMIT_PER_HOUR = envNum("AGENT_WAKE_LIMIT_PER_HOUR", 30);
 // Raffica: se l'agente è stato appena svegliato, il nuovo messaggio non lo sveglia di nuovo
-const BURST_MS = 15_000;
-// Doppio invio dello stesso testo: non costa una seconda sveglia
-const DUPLICATE_MS = 60_000;
+// (AGENT_WAKE_BURST_SECONDS, default 15, 0 = disattivato)
+const BURST_MS = envNum("AGENT_WAKE_BURST_SECONDS", 15) * 1000;
+// Doppio invio dello stesso testo: non costa una seconda sveglia (AGENT_WAKE_DUPLICATE_SECONDS, default 60, 0 = disattivato)
+const DUPLICATE_MS = envNum("AGENT_WAKE_DUPLICATE_SECONDS", 60) * 1000;
 
 /** `force`: "Riprova" dell'utente, salta le regole che risparmiano sveglie. */
 export async function wakeForMessage(db: Firestore, id: string, force = false): Promise<Record<string, WakeResult>> {
@@ -70,8 +76,8 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
     const url = process.env[`AGENT_WAKE_${agent.toUpperCase()}_URL`] || process.env.AGENT_WAKE_URL || "";
     const token = process.env[`AGENT_WAKE_${agent.toUpperCase()}_TOKEN`] || process.env.AGENT_WAKE_TOKEN || "";
     if (!url.startsWith(FIRE_PREFIX) || !token) { done({ status: "skipped", reason: "variabili AGENT_WAKE_* mancanti o non valide su Vercel" }); continue; }
-    // tetto di sicurezza: al massimo 30 sveglie l'ora per agente (ogni sveglia consuma crediti)
-    if (!(await rateLimit(db, "wake", agent, 30, 3600))) { done({ status: "skipped", reason: "limite di 30 sveglie l'ora raggiunto" }); continue; }
+    // tetto di sicurezza per agente (ogni sveglia consuma crediti): AGENT_WAKE_LIMIT_PER_HOUR, 0 = nessun limite nostro
+    if (LIMIT_PER_HOUR > 0 && !(await rateLimit(db, "wake", agent, LIMIT_PER_HOUR, 3600))) { done({ status: "skipped", reason: `limite di ${LIMIT_PER_HOUR} sveglie l'ora raggiunto (AGENT_WAKE_LIMIT_PER_HOUR su Vercel)` }); continue; }
     try {
       // Il testo non contiene il messaggio: l'agente lo legge con l'API della chat (autenticata)
       const text = fromOwner

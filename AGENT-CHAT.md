@@ -75,3 +75,14 @@ Prompt consigliato per gli agenti: "Se il titolare ti chiede di un discorso di p
 
 Prompt consigliato (da aggiungere a quello degli agenti):
 > GRUPPO: rispondi nel gruppo solo se sei chiamato in causa (@il-tuo-id), se la domanda del titolare riguarda la tua area o hai qualcosa di utile da aggiungere; non rispondere a ringraziamenti, conferme o saluti degli altri. Per chiedere qualcosa a un collega, scrivigli in privato (to = il suo id) oppure nel gruppo con @id. Massimo una risposta per sveglia. Non rimpallare: se un collega ti ha già risposto, concludi.
+
+## Regolare i limiti della sveglia (variabili su Vercel)
+
+| Variabile | Predefinito | Effetto |
+|---|---|---|
+| `AGENT_WAKE_LIMIT_PER_HOUR` | 30 | sveglie l'ora per agente; `0` = nessun limite nostro |
+| `AGENT_WAKE_BURST_SECONDS` | 15 | un agente appena svegliato non viene risvegliato entro questi secondi; `0` = disattivato |
+| `AGENT_WAKE_DUPLICATE_SECONDS` | 60 | lo stesso testo ripetuto entro questi secondi non risveglia; `0` = disattivato |
+| `AGENT_CHAIN_MAX` | 8 | messaggi di agenti di fila senza il titolare che possono ancora svegliare |
+
+Restano sempre: i vocali non svegliano, i messaggi tra agenti svegliano solo per messaggio diretto o `@menzione`. Il limite di **30 avvii l'ora per routine** è di Anthropic (API fire) e non si cambia da qui: alla 31ª sveglia la routine risponde 429 e l'esito (con il testo della risposta) resta nel campo `wake` del messaggio, con il pulsante Riprova. Per averne di più servono più routine (una per agente: `AGENT_WAKE_<ID>_URL` / `AGENT_WAKE_<ID>_TOKEN`), ognuna con il suo limite.
