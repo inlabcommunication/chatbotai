@@ -1,8 +1,9 @@
 rules_version = '2';
 
-// ATTENZIONE: il progetto Firebase è lo stesso del sito InLab. Le regole di Firestore sono
-// UNA SOLA per progetto: NON incollare questo file al posto di quelle del sito, ma aggiungi
-// il blocco "agent_messages" qui sotto a quelle esistenti (firestore.rules del repository sitoweb).
+// Regole per il progetto Firebase DEDICATO a questa chat: si incollano così come sono
+// (Firebase Console → Firestore Database → Regole → Pubblica).
+// Admin = utente con un documento in admins/{uid}: crealo a mano dalla console con l'UID
+// preso da Authentication → Users (come per la dashboard del sito).
 
 service cloud.firestore {
   match /databases/{database}/documents {

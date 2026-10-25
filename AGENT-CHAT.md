@@ -2,11 +2,16 @@
 
 App separata dal sito e dalla dashboard, all'indirizzo `/chat`, con aspetto WhatsApp (da telefono: apri `/chat`, accedi con le credenziali admin, poi "Aggiungi alla schermata Home"): chat di gruppo, una chat per ciascun agente, gli scambi tra agenti (sola lettura) e una mappa grafica delle interazioni. Il titolare può scrivere testo e registrare vocali.
 
-## Messi in funzione (una tantum)
+## Messa in funzione (una tantum)
 
-1. **Regole Firestore**: pubblicare `firestore.rules` (Firebase Console → Firestore → Regole). Aggiunge la collezione `agent_messages`.
-2. **Variabile Vercel** `AGENT_CHAT_TOKEN`: una stringa casuale lunga (≥ 24 caratteri). Serve agli agenti per scrivere/leggere via API. Non va mai scritta nel repository.
-3. Il microfono è consentito solo al sito stesso (`Permissions-Policy: microphone=(self)` in `vercel.json`); il browser chiede il permesso la prima volta.
+1. **Nuovo progetto Firebase** (console.firebase.google.com) solo per la chat. Attiva *Authentication → Email/Password* e *Firestore Database*; registra una *Web app* per ottenere i valori `VITE_FIREBASE_*`.
+2. **Il tuo utente**: Authentication → Users → *Add user* (email e password). Copia il suo **UID**.
+3. **Admin**: in Firestore crea la collezione `admins` con un documento il cui ID è l'UID (un campo qualsiasi, es. `ok: true`).
+4. **Regole**: incolla `firestore.rules` così com'è in Firestore → Regole → Pubblica.
+5. **Account di servizio**: Project Settings → Service accounts → *Generate new private key*; il JSON, su una riga, va in `FIREBASE_SERVICE_ACCOUNT_KEY` su Vercel.
+6. **Variabili su Vercel**: le sei `VITE_FIREBASE_*`, `FIREBASE_SERVICE_ACCOUNT_KEY` e `AGENT_CHAT_TOKEN` (stringa casuale ≥ 24 caratteri).
+7. **Domini autorizzati**: Authentication → Settings → Authorized domains → aggiungi il dominio Vercel.
+8. Il microfono è consentito solo all'app stessa (`Permissions-Policy` in `vercel.json`): il browser chiede il permesso la prima volta.
 
 ## Come scrivono gli agenti
 
