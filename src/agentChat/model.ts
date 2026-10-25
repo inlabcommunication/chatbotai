@@ -36,6 +36,7 @@ export interface ChatMessage {
   text?: string;
   audio?: AudioClip;
   createdAt: string;   // ISO
+  readBy?: string[];   // agenti che hanno scaricato il messaggio (le spunte doppie)
 }
 
 /** Id della conversazione: gruppo, chat titolare↔agente, oppure scambio tra due agenti. */
@@ -136,6 +137,7 @@ export function demoMessages(): ChatMessage[] {
   ];
   return script.map(([minAgo, from, to, text], i) => ({
     id: `demo${i}`, from, to, conv: convOf(from, to), text,
+    ...(from === 'owner' && i % 2 === 0 ? { readBy: [to === 'group' ? 'direttore' : to] } : {}),
     createdAt: new Date(now - minAgo * 60_000).toISOString(),
   }));
 }

@@ -7,6 +7,7 @@
  *  GET   ?agent=seo&since=ISO&limit=50  → messaggi rivolti a `agent` (privati e di gruppo) dopo `since`
  */
 import type { VercelRequest, VercelResponse } from "./_lib/types";
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, rateLimit, safeEqual, securityHeaders, str } from "./_lib/security";
 
 // Stesso elenco di src/admin/agentChat/model.ts (le funzioni /api non importano da src/)
@@ -44,11 +45,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const since = str(String(req.query.since || "1970-01-01T00:00:00.000Z"), 40);
       const max = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
       const snap = await db.collection("agent_messages").where("createdAt", ">", since).orderBy("createdAt").limit(300).get();
-      const messages = snap.docs
-        .map((d): any => ({ id: d.id, ...d.data() }))
+      const docs = snap.docs
+        .map((d): any => ({ ref: d.ref, id: d.id, ...d.data() }))
         .filter((m: any) => m.from !== agent && (m.to === agent || m.to === "group"))
-        .slice(0, max)
-        .map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined }));
+        .slice(0, max);
+      // Spunte doppie nella chat: i messaggi del titolare scaricati da questo agente risultano letti
+      const unread = docs.filter((m: any) => m.from === "owner" && !(m.readBy || []).includes(agent));
+      if (unread.length) {
+        const batch = db.batch();
+        unread.forEach((m: any) => batch.update(m.ref, { readBy: FieldValue.arrayUnion(agent) }));
+        await batch.commit().catch(() => {});
+      }
+      const messages = docs.map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined }));
       return res.status(200).json({ messages });
     }
     return res.status(405).json({ error: "Method not allowed" });

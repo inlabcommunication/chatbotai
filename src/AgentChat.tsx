@@ -29,6 +29,22 @@ async function wakeAgent(to: string, id: string, kind: 'text' | 'voice') {
   } catch { /* la sveglia è facoltativa: il messaggio è già salvato */ }
 }
 
+/** Spunte come WhatsApp: una = salvato, due blu = letto da un agente (scaricato con l'API). */
+const Ticks = ({ m }: { m: ChatMessage }) => {
+  const readers = m.readBy ?? [];
+  const read = readers.length > 0;
+  const who = readers.map(r => infoOf(r).name).join(', ');
+  return (
+    <svg className="wa-ticks" width="18" height="12" viewBox="0 0 18 12" role="img" aria-label={read ? `Letto da ${who}` : 'Inviato'}>
+      <title>{read ? `Letto da ${who}` : 'Inviato'}</title>
+      <g fill="none" stroke={read ? '#53bdeb' : 'rgba(233,237,239,.6)'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M1.5 6.5l3.2 3.2L11 2.5" />
+        {read && <path d="M7.2 9.7l.7.7L14.5 2.5" />}
+      </g>
+    </svg>
+  );
+};
+
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 function dayLabel(iso: string): string {
   const d = new Date(iso), t = new Date();
@@ -202,7 +218,7 @@ const Thread = ({ messages, conv }: { messages: ChatMessage[]; conv: ConvInfo })
                 {conv.kind === 'pair' && <div className="wa-to">→ {infoOf(m.to).name}</div>}
                 {m.audio && <VoiceBubble clip={m.audio} seed={m.id} color={mine ? '#53bdeb' : who.color} />}
                 {m.text && <div className="wa-text">{m.text}</div>}
-                <time>{hhmm(m.createdAt)}</time>
+                <time>{hhmm(m.createdAt)}{mine && <Ticks m={m} />}</time>
               </div>
             </div>
           </div>
