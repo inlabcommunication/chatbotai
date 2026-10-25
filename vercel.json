@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "functions": { "api/agent-chat.ts": { "maxDuration": 15 }, "api/notify-agent.ts": { "maxDuration": 20 } },
+  "functions": { "api/agent-chat.ts": { "maxDuration": 15 }, "api/notify-agent.ts": { "maxDuration": 30 }, "api/send.ts": { "maxDuration": 30 } },
   "headers": [
     {
       "source": "/(.*)",

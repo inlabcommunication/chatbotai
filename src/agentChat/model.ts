@@ -36,6 +36,7 @@ export interface ChatMessage {
   text?: string;
   audio?: AudioClip;
   createdAt: string;   // ISO
+  wake?: Record<string, { status: 'sent' | 'failed' | 'skipped'; reason?: string; http?: number; at: string }>; // esito dell'avviso a ogni agente
   readBy?: string[];   // agenti che hanno scaricato il messaggio (le spunte doppie)
 }
 

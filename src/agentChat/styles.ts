@@ -39,6 +39,8 @@ export const agentChatStyles = `
 .wa-who{font-size:12.5px;font-weight:600;margin-bottom:2px}.wa-to{font-size:11.5px;color:var(--wa-m);margin-bottom:2px}
 .wa-text{font-size:14.5px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;padding-right:46px}
 .wa-bubble time{display:block;text-align:right;font-size:11px;color:rgba(233,237,239,.6);margin-top:-12px;float:right;position:relative;top:2px}
+.wa-wakeerr{margin-top:4px;padding:5px 8px;border-radius:6px;background:rgba(255,77,77,.14);color:#ffb4b4;font-size:12px;line-height:1.35}
+.wa-wakeerr button{margin-left:6px;color:#53bdeb!important;text-decoration:underline}
 .wa-ticks{display:inline-block;vertical-align:-1px;margin-left:4px}
 .wa-voice+.wa-text,.wa-voice{margin-bottom:2px}
 .wa-voice{display:flex;align-items:center;gap:10px;min-width:230px;padding:4px 40px 8px 0}

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FC } from 'react';
-import { addDoc, collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { ArrowLeft, Mic, Send, Network, MessageCircle, Search, Eye, Sparkles } from 'lucide-react';
 import { auth, db } from './firebase';
 import {
-  AGENTS, GROUP_ID, OWNER_ID, convInfo, convOf, demoMessages, infoOf, previewOf, shortOf,
+  AGENTS, GROUP_ID, OWNER_ID, convInfo, demoMessages, infoOf, previewOf, shortOf,
   type AudioClip, type ChatMessage, type ConvInfo,
 } from './agentChat/model';
 import { Recorder, VoiceBubble } from './agentChat/Voice';
@@ -16,27 +16,33 @@ const SEEN_KEY = 'agentchat_seen';
 const loadSeen = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch { return {}; } };
 const saveSeen = (s: Record<string, string>) => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch { /* storage non disponibile */ } };
 
-/** Avvisa il server, che sveglia la routine dell'agente (se ne ha una). Non blocca mai l'invio. */
-async function wakeAgent(to: string, id: string, kind: 'text' | 'voice') {
+type WakeInfo = NonNullable<ChatMessage['wake']>;
+
+async function callApi(path: string, body: unknown): Promise<{ ok: boolean; wake?: WakeInfo; error?: string }> {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) return { ok: false, error: 'Sessione scaduta: esci e rientra.' };
   try {
-    const token = await auth?.currentUser?.getIdToken();
-    if (!token) return;
-    await fetch('/api/notify-agent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ to, id, kind }),
-    });
-  } catch { /* la sveglia è facoltativa: il messaggio è già salvato */ }
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? { ok: true, wake: j.wake } : { ok: false, error: j.error || `Errore ${r.status}` };
+  } catch { return { ok: false, error: 'Connessione assente.' }; }
 }
+
+/** Avvisi da segnalare: la sveglia è fallita o mancano le variabili su Vercel (non i casi "saltata di proposito"). */
+const wakeProblems = (w?: WakeInfo): string[] =>
+  Object.entries(w ?? {}).filter(([, r]) => r.status === 'failed' || r.reason?.startsWith('variabili') || r.reason?.startsWith('nessun agente'))
+    .map(([a, r]) => `${infoOf(a).name}: ${r.reason}`);
 
 /** Spunte come WhatsApp: una = salvato, due blu = letto da un agente (scaricato con l'API). */
 const Ticks = ({ m }: { m: ChatMessage }) => {
   const readers = m.readBy ?? [];
   const read = readers.length > 0;
   const who = readers.map(r => infoOf(r).name).join(', ');
+  const wake = Object.entries(m.wake ?? {}).map(([a, r]) => `${infoOf(a).name}: avviso ${r.status === 'sent' ? 'inviato' : r.status === 'failed' ? 'fallito' : 'non inviato'}${r.reason ? ' (' + r.reason + ')' : ''}`).join('\n');
+  const label = (read ? `Letto da ${who}` : 'Inviato') + (wake ? '\n' + wake : '');
   return (
-    <svg className="wa-ticks" width="18" height="12" viewBox="0 0 18 12" role="img" aria-label={read ? `Letto da ${who}` : 'Inviato'}>
-      <title>{read ? `Letto da ${who}` : 'Inviato'}</title>
+    <svg className="wa-ticks" width="18" height="12" viewBox="0 0 18 12" role="img" aria-label={label}>
+      <title>{label}</title>
       <g fill="none" stroke={read ? '#53bdeb' : 'rgba(233,237,239,.6)'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M1.5 6.5l3.2 3.2L11 2.5" />
         {read && <path d="M7.2 9.7l.7.7L14.5 2.5" />}
@@ -128,13 +134,11 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
   const send = async (payload: { text?: string; audio?: AudioClip }) => {
     if (!db || demo) { setError(demo ? 'Anteprima dimostrativa: esci dalla demo per inviare messaggi veri.' : 'Database non configurato.'); return; }
     const to = cur.kind === 'group' ? GROUP_ID : cur.members.find(m => m !== OWNER_ID)!;
-    try {
-      const ref = await addDoc(collection(db, COLLECTION), { from: OWNER_ID, to, conv: convOf(OWNER_ID, to), ...payload, createdAt: new Date().toISOString() });
-      setError(null);
-      wakeAgent(to, ref.id, payload.audio ? 'voice' : 'text');
-    } catch {
-      setError('Messaggio non inviato. Controlla la connessione e le regole Firestore.');
-    }
+    // Il server salva il messaggio e sveglia l'agente nella stessa chiamata, poi dice com'è andata
+    const r = await callApi('/api/send', { to, ...payload });
+    if (!r.ok) { setError(`Messaggio non inviato: ${r.error}`); return; }
+    const problems = wakeProblems(r.wake);
+    setError(problems.length ? `Messaggio salvato, ma agente non avvisato. ${problems.join(' · ')}` : null);
   };
 
   return (
@@ -172,7 +176,7 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
               <Avatar color={cur.color} label={abbr(cur.title)} size={40} />
               <div><b>{cur.title}</b><span>{cur.subtitle}</span></div>
             </header>
-            <Thread messages={thread} conv={cur} />
+            <Thread messages={thread} conv={cur} onRetry={async id => { const r = await callApi('/api/notify-agent', { id }); const p = r.ok ? wakeProblems(r.wake) : [r.error || 'Errore']; setError(p.length ? `Avviso non riuscito. ${p.join(' · ')}` : null); }} />
             {cur.readOnly
               ? <div className="wa-readonly"><Eye size={14} /> Stai solo guardando: questa conversazione è tra due agenti.</div>
               : <Composer onText={t => send({ text: t })} onClip={a => send({ audio: a })} onError={setError} placeholder={cur.kind === 'group' ? 'Scrivi al gruppo' : `Scrivi a ${cur.title}`} />}
@@ -196,7 +200,7 @@ const ConvRow: FC<{ c: ConvInfo; last?: ChatMessage; unread: number; active: boo
   </button>
 );
 
-const Thread = ({ messages, conv }: { messages: ChatMessage[]; conv: ConvInfo }) => {
+const Thread = ({ messages, conv, onRetry }: { messages: ChatMessage[]; conv: ConvInfo; onRetry: (id: string) => void }) => {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [messages.length, conv.id]);
   let lastDay = '';
@@ -218,6 +222,9 @@ const Thread = ({ messages, conv }: { messages: ChatMessage[]; conv: ConvInfo })
                 {conv.kind === 'pair' && <div className="wa-to">→ {infoOf(m.to).name}</div>}
                 {m.audio && <VoiceBubble clip={m.audio} seed={m.id} color={mine ? '#53bdeb' : who.color} />}
                 {m.text && <div className="wa-text">{m.text}</div>}
+                {mine && wakeProblems(m.wake).length > 0 && (
+                  <div className="wa-wakeerr">⚠ Agente non avvisato: {wakeProblems(m.wake).join(' · ')} <button onClick={() => onRetry(m.id)}>Riprova</button></div>
+                )}
                 <time>{hhmm(m.createdAt)}{mine && <Ticks m={m} />}</time>
               </div>
             </div>
