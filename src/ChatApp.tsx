@@ -57,13 +57,20 @@ export const ChatApp = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState('');
 
   useEffect(() => {
     if (!auth) { setChecking(false); return; }
     return onAuthStateChanged(auth, async u => {
       setUser(u);
       let ok = false;
-      if (u && db) { try { ok = (await getDoc(doc(db, 'admins', u.uid))).exists(); } catch { ok = false; } }
+      setWhy('');
+      if (u && db) {
+        try {
+          ok = (await getDoc(doc(db, 'admins', u.uid))).exists();
+          if (!ok) setWhy('Il documento admins/' + u.uid + ' non esiste in Firestore (progetto ' + db.app.options.projectId + ').');
+        } catch (e: any) { ok = false; setWhy('Errore Firestore: ' + (e?.code || e?.message || e)); }
+      }
       setIsAdmin(ok); setChecking(false);
     });
   }, []);
@@ -84,7 +91,7 @@ export const ChatApp = () => {
         <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#00a884', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 26, color: '#0b141a', alignSelf: 'center' }}>IL</div>
         <h1 style={{ textAlign: 'center', fontSize: 22, fontWeight: 600 }}>Chat InLab</h1>
         {user && !isAdmin
-          ? <p style={{ color: '#ffb4b4', textAlign: 'center', fontSize: 14 }}>{user.email} non è autorizzato.</p>
+          ? <p style={{ color: '#ffb4b4', textAlign: 'center', fontSize: 14, overflowWrap: 'anywhere' }}>{user.email} non è autorizzato.<br /><span style={{ color: '#8696a0', fontSize: 12 }}>{why}</span></p>
           : <p style={{ color: '#8696a0', textAlign: 'center', fontSize: 14 }}>Accedi con le credenziali della dashboard.</p>}
         {user && !isAdmin
           ? <button type="button" style={button} onClick={() => auth && signOut(auth)}>Esci</button>
