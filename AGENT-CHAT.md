@@ -35,3 +35,15 @@ Collezione `agent_messages`: `from`, `to`, `conv` (`group`, `dm_<agente>`, `pair
 
 - Gli agenti non "ascoltano" i vocali: ricevono solo che ne è arrivato uno. Serve una trascrizione (richiesta a parte) per farli reagire al contenuto.
 - Gli agenti non scrivono da soli: devono chiamare l'API (istruzione da dare a ciascuna sessione).
+
+## Svegliare gli agenti quando scrivi (facoltativo)
+
+Gli agenti sono sessioni che lavorano a turni. Per farli reagire a un tuo messaggio, ogni agente ha una **routine** su claude.ai con un trigger **API**: quando scrivi nella chat, `/api/notify-agent` chiama l'indirizzo di quella routine e l'agente si sveglia, legge la chat e risponde. Ogni sveglia consuma crediti.
+
+1. Su claude.ai/code/routines crea una routine per agente (nome es. "Chat — Addetto SEO"), con trigger **API**. Copia **Fire URL** e **token** (il token si vede una volta sola).
+2. Prompt della routine (cambia `ID_AGENTE`):
+   > Sei l'agente `ID_AGENTE`. Nel blocco routine-fire-payload c'è l'avviso di un nuovo messaggio del titolare nella chat InLab. Leggi i messaggi nuovi con `curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID_AGENTE&since=<ISO di un'ora fa>"`, esegui quanto chiesto restando nel tuo ruolo e nelle regole di CLAUDE.md, poi rispondi con `POST $CHAT_URL/api/agent-chat` ({"agent":"ID_AGENTE","to":"owner","text":"..."}). Se non c'è niente di nuovo, fermati subito.
+   L'ambiente della routine deve avere le variabili `CHAT_URL` e `CHAT_TOKEN` e la rete deve poter raggiungere il dominio della chat.
+3. Su Vercel aggiungi `AGENT_WAKE_<ID>_URL` (Fire URL) e `AGENT_WAKE_<ID>_TOKEN` (token) per quell'agente, e `AGENT_GROUP_WAKE` (es. `direttore`) per i messaggi al gruppo. Redeploy.
+
+Limiti: al massimo 30 sveglie l'ora per agente. I vocali svegliano l'agente ma lui non li ascolta. I messaggi tra agenti non svegliano nessuno (evita catene infinite).

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { addDoc, collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { ArrowLeft, Send, Network, MessageCircle, Search, Eye, Sparkles } from 'lucide-react';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import {
   AGENTS, GROUP_ID, OWNER_ID, convInfo, convOf, demoMessages, infoOf, previewOf, shortOf,
   type AudioClip, type ChatMessage, type ConvInfo,
@@ -15,6 +15,19 @@ const SEEN_KEY = 'agentchat_seen';
 
 const loadSeen = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch { return {}; } };
 const saveSeen = (s: Record<string, string>) => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch { /* storage non disponibile */ } };
+
+/** Avvisa il server, che sveglia la routine dell'agente (se ne ha una). Non blocca mai l'invio. */
+async function wakeAgent(to: string, id: string, kind: 'text' | 'voice') {
+  try {
+    const token = await auth?.currentUser?.getIdToken();
+    if (!token) return;
+    await fetch('/api/notify-agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ to, id, kind }),
+    });
+  } catch { /* la sveglia è facoltativa: il messaggio è già salvato */ }
+}
 
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 function dayLabel(iso: string): string {
@@ -100,8 +113,9 @@ export const AgentChat = ({ onLogout }: { onLogout?: () => void }) => {
     if (!db || demo) { setError(demo ? 'Anteprima dimostrativa: esci dalla demo per inviare messaggi veri.' : 'Database non configurato.'); return; }
     const to = cur.kind === 'group' ? GROUP_ID : cur.members.find(m => m !== OWNER_ID)!;
     try {
-      await addDoc(collection(db, COLLECTION), { from: OWNER_ID, to, conv: convOf(OWNER_ID, to), ...payload, createdAt: new Date().toISOString() });
+      const ref = await addDoc(collection(db, COLLECTION), { from: OWNER_ID, to, conv: convOf(OWNER_ID, to), ...payload, createdAt: new Date().toISOString() });
       setError(null);
+      wakeAgent(to, ref.id, payload.audio ? 'voice' : 'text');
     } catch {
       setError('Messaggio non inviato. Controlla la connessione e le regole Firestore.');
     }
