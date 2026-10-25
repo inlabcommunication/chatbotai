@@ -15,6 +15,19 @@ export function targetsFor(to: string): string[] {
   return AGENTS.includes(to) ? [to] : [];
 }
 
+/**
+ * Agenti da svegliare per un messaggio scritto da un AGENTE: se scrive a un collega, quel collega;
+ * se scrive nel gruppo, solo i colleghi chiamati per nome con @id (non tutto il gruppo: costerebbe troppo).
+ */
+export function agentTargetsFor(from: string, to: string, text: string): string[] {
+  if (to === "owner") return [];
+  if (to === "group") return AGENTS.filter(a => a !== from && new RegExp(`@${a}\\b`, "i").test(text || ""));
+  return AGENTS.includes(to) && to !== from ? [to] : [];
+}
+
+// Massimo di messaggi di agenti di fila, senza un messaggio del titolare in mezzo, che possono ancora svegliare qualcuno
+const CHAIN_MAX = Math.max(1, Number(process.env.AGENT_CHAIN_MAX) || 8);
+
 // Raffica: se l'agente è stato appena svegliato, il nuovo messaggio non lo sveglia di nuovo
 const BURST_MS = 15_000;
 // Doppio invio dello stesso testo: non costa una seconda sveglia
@@ -26,23 +39,32 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
   const snap = await ref.get();
   const m: any = snap.data();
   const out: Record<string, WakeResult> = {};
-  if (!m || m.from !== "owner") return out;
+  if (!m) return out;
+  const fromOwner = m.from === "owner";
+  if (!fromOwner && !AGENTS.includes(m.from)) return out;
 
-  const targets = targetsFor(m.to);
-  if (!targets.length) {
+  const targets = fromOwner ? targetsFor(m.to) : agentTargetsFor(m.from, m.to, m.text || "");
+  if (!targets.length && fromOwner) {
     out[m.to] = { status: "skipped", reason: "nessun agente da svegliare (per il gruppo imposta AGENT_GROUP_WAKE)", at: new Date().toISOString() };
   }
-  const voiceOnly = !!m.audio && !m.text;
-  // ultimi messaggi, per riconoscere ripetizioni e raffiche (si filtra qui: niente indice composto)
-  const recent: any[] = force || voiceOnly ? [] : (await db.collection("agent_messages").orderBy("createdAt", "desc").limit(30).get())
+  const voiceOnly = fromOwner && !!m.audio && !m.text;
+  // ultimi messaggi, per riconoscere ripetizioni, raffiche e catene (si filtra qui: niente indice composto)
+  const recent: any[] = force || voiceOnly || !targets.length ? [] : (await db.collection("agent_messages").orderBy("createdAt", "desc").limit(40).get())
     .docs.filter(d => d.id !== id).map(d => d.data());
+  // Catena tra agenti: messaggi di agenti di fila dopo l'ultimo del titolare (compreso questo)
+  let chain = 1;
+  if (!fromOwner) for (const x of recent) { if (x.from === "owner") break; chain++; }
+  const chainBlocked = !fromOwner && !force && chain > CHAIN_MAX;
   for (const agent of targets) {
     const done = (r: Omit<WakeResult, "at">) => { out[agent] = { ...r, at: new Date().toISOString() }; };
+    if (chainBlocked) { done({ status: "skipped", reason: `catena tra agenti troppo lunga (oltre ${CHAIN_MAX} messaggi senza il titolare): nessuna sveglia, scrivi tu per farli ripartire` }); continue; }
     if (voiceOnly && !force) { done({ status: "skipped", reason: "vocale: gli agenti non lo ascoltano, nessuna sveglia (usa la dettatura)" }); continue; }
     if (!force) {
-      const prev = recent.find(x => x.from === "owner" && x.to === m.to && x.wake?.[agent]?.status === "sent");
+      const prev = fromOwner
+        ? recent.find(x => x.from === "owner" && x.to === m.to && x.wake?.[agent]?.status === "sent")
+        : recent.find(x => x.wake?.[agent]?.status === "sent");
       const sinceWake = prev ? Date.now() - Date.parse(prev.wake[agent].at) : Infinity;
-      if (prev && prev.text && prev.text === m.text && sinceWake < DUPLICATE_MS) { done({ status: "skipped", reason: "stesso testo appena inviato: nessuna seconda sveglia" }); continue; }
+      if (fromOwner && prev && prev.text && prev.text === m.text && sinceWake < DUPLICATE_MS) { done({ status: "skipped", reason: "stesso testo appena inviato: nessuna seconda sveglia" }); continue; }
       if (prev && sinceWake < BURST_MS) { done({ status: "skipped", reason: "agente appena svegliato: leggerà tutti i messaggi non letti insieme" }); continue; }
     }
     const url = process.env[`AGENT_WAKE_${agent.toUpperCase()}_URL`] || process.env.AGENT_WAKE_URL || "";
@@ -52,7 +74,9 @@ export async function wakeForMessage(db: Firestore, id: string, force = false): 
     if (!(await rateLimit(db, "wake", agent, 30, 3600))) { done({ status: "skipped", reason: "limite di 30 sveglie l'ora raggiunto" }); continue; }
     try {
       // Il testo non contiene il messaggio: l'agente lo legge con l'API della chat (autenticata)
-      const text = `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio ${m.audio && !m.text ? "vocale " : ""}${m.file ? "con allegato " : ""}del titolare${m.to === "group" ? " nel gruppo" : " per questo agente"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi.`;
+      const text = fromOwner
+        ? `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio ${m.audio && !m.text ? "vocale " : ""}${m.file ? "con allegato " : ""}del titolare${m.to === "group" ? " nel gruppo" : " per questo agente"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi.`
+        : `Chat InLab. Agente destinatario: ${agent}. Nuovo messaggio del collega ${m.from}${m.to === "group" ? " nel gruppo (ti ha chiamato con @" + agent + ")" : " per te"} (id ${id}). Leggi i messaggi non letti con l'API della chat e rispondi solo se serve.`;
       const r = await fetch(url, {
         method: "POST",
         headers: {

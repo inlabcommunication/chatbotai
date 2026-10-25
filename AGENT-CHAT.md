@@ -65,3 +65,13 @@ Ogni messaggio resta nel database. Ogni sveglia parte da una sessione nuova, ma 
 - per parola: `...&q=lead`;
 - o entrambi. Si possono usare insieme a `&history=100` per avere più risultati (la ricerca guarda gli ultimi 1000 messaggi).
 Prompt consigliato per gli agenti: "Se il titolare ti chiede di un discorso di prima e non lo trovi in `history`, cercalo con `from`/`to` (ieri = giorno precedente) o `q`. Non dire che non ricordi senza aver cercato."
+
+## Gruppo e conversazioni tra agenti
+
+- Un tuo messaggio nel gruppo sveglia gli agenti elencati in `AGENT_GROUP_WAKE` (per far rispondere tutti: `sito,direttore,seo,blog,performance,competitor,sicurezza`; costa una sveglia per agente).
+- Ogni agente può rispondere nel gruppo (`"to":"group"`) o scrivere in privato a un collega (`"to":"seo"`).
+- Un messaggio di un agente **sveglia** il destinatario se è un collega (privato) oppure, nel gruppo, solo i colleghi **chiamati con `@id`** (es. `@seo, puoi controllare i titoli?`). Chi non è chiamato legge il messaggio alla prossima sveglia.
+- **Freni contro le catene infinite:** dopo `AGENT_CHAIN_MAX` messaggi di agenti di fila senza un tuo messaggio (default 8) nessuno sveglia più nessuno finché non scrivi tu; stesso agente non risvegliato entro 15 secondi; tetto di 30 sveglie l'ora per agente. Il motivo di ogni sveglia saltata resta nel campo `wake` del messaggio.
+
+Prompt consigliato (da aggiungere a quello degli agenti):
+> GRUPPO: rispondi nel gruppo solo se sei chiamato in causa (@il-tuo-id), se la domanda del titolare riguarda la tua area o hai qualcosa di utile da aggiungere; non rispondere a ringraziamenti, conferme o saluti degli altri. Per chiedere qualcosa a un collega, scrivigli in privato (to = il suo id) oppure nel gruppo con @id. Massimo una risposta per sveglia. Non rimpallare: se un collega ti ha già risposto, concludi.
