@@ -6,6 +6,7 @@
  *  POST  { agent, to, text }            → l'agente `agent` scrive a `to` ('owner' | 'group' | altro agente)
  *  GET   ?agent=seo&unread=1            → messaggi rivolti a `agent` (privati e di gruppo) che non ha ancora letto
  *  GET   ?agent=seo&since=ISO&limit=50  → oppure quelli successivi alla data `since`
+ *        &history=20                    → aggiunge `history`: gli ultimi 20 messaggi delle sue conversazioni, come contesto
  */
 import type { VercelRequest, VercelResponse } from "./_lib/types";
 import { FieldValue } from "firebase-admin/firestore";
@@ -63,8 +64,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         toMark.forEach((m: any) => batch.update(m.ref, { readBy: FieldValue.arrayUnion(agent) }));
         await batch.commit().catch(() => {});
       }
+      // Contesto: gli ultimi messaggi delle conversazioni dell'agente (con il titolare, nel gruppo, con altri agenti),
+      // già letti o no, senza duplicare i non letti e senza segnarli come letti
+      const histN = Math.min(50, Math.max(0, Number(req.query.history) || 0));
+      let history: any[] = [];
+      if (histN) {
+        const ids = new Set(docs.map((m: any) => m.id));
+        const snap = await db.collection("agent_messages").orderBy("createdAt", "desc").limit(300).get();
+        history = snap.docs.map((d): any => ({ id: d.id, ...d.data() }))
+          .filter((m: any) => !ids.has(m.id) && (m.from === agent || m.to === agent || m.to === "group"))
+          .slice(0, histN).reverse()
+          .map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined }));
+      }
       const messages = docs.map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined }));
-      return res.status(200).json({ messages });
+      return res.status(200).json(histN ? { messages, history } : { messages });
     }
     return res.status(405).json({ error: "Method not allowed" });
   } catch (e) {
