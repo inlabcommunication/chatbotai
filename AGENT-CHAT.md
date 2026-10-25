@@ -111,3 +111,5 @@ Una domanda generica nel gruppo la prende **solo il Direttore** (`AGENT_GROUP_WA
 
 Riga da aggiungere al prompt della routine:
 > GRUPPO: se il titolare fa una domanda generica nel gruppo (non cita nessuno e non riguarda solo un'area) risponde SOLO il Direttore, che decide chi coinvolgere e chiama i colleghi con @id. Gli altri agenti rispondono nel gruppo solo se sono chiamati per nome (@il-tuo-id) o se la domanda riguarda inequivocabilmente solo la loro area. Se non sei chiamato e non sei il Direttore, non scrivere.
+
+**Senza Node.js sul PC:** se le chiavi VAPID non sono ancora impostate, toccando la campanella l'app ne genera una coppia nuova e la mostra con i pulsanti Copia (solo al titolare loggato, non viene salvata). Si copiano su Vercel come `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT`, poi Redeploy.

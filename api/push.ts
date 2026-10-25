@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import type { VercelRequest, VercelResponse } from "./_lib/types";
 import { getAdminDb, requireAdmin, securityHeaders, str } from "./_lib/security";
+import webpush from "web-push";
 import { sendToDevices } from "./_lib/push";
 
 const idOf = (endpoint: string) => createHash("sha256").update(endpoint).digest("hex").slice(0, 40);
@@ -21,7 +22,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const db = getAdminDb();
     if (req.method === "GET") {
       const publicKey = process.env.VAPID_PUBLIC_KEY || "";
-      return publicKey ? res.status(200).json({ publicKey }) : res.status(503).json({ error: "Chiavi VAPID mancanti su Vercel" });
+      if (publicKey) return res.status(200).json({ publicKey });
+      // Chiavi non ancora impostate: ne genero una coppia nuova, mostrata solo al titolare loggato, da copiare su Vercel.
+      // Non viene salvata da nessuna parte: a ogni richiesta ne esce una diversa.
+      return res.status(503).json({ error: "Chiavi VAPID mancanti su Vercel", generated: webpush.generateVAPIDKeys() });
     }
     const b = req.body || {};
     if (req.method === "POST" && b.action === "test") {
