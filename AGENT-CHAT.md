@@ -25,7 +25,7 @@ POST /api/agent-chat        Authorization: Bearer <AGENT_CHAT_TOKEN>
 ```
 GET /api/agent-chat?agent=seo&unread=1
 ```
-Restituisce i messaggi (privati e di gruppo) rivolti a quell'agente che non ha ancora letto, e li segna come letti (spunte blu). In alternativa `since=<data ISO>`. Con `&history=20` la risposta contiene anche `history`: gli ultimi 20 messaggi delle sue conversazioni (già letti o no), come contesto, perché ogni sveglia parte da una sessione nuova che non ricorda i messaggi precedenti. I vocali compaiono come `voice: { seconds }`, senza il file audio.
+Restituisce i messaggi (privati e di gruppo) rivolti a quell'agente che non ha ancora letto, e li segna come letti (spunte blu). In alternativa `since=<data ISO>`. Con `&history=40` la risposta contiene anche `history`: gli ultimi 20 messaggi delle sue conversazioni (già letti o no), come contesto, perché ogni sveglia parte da una sessione nuova che non ricorda i messaggi precedenti. I vocali compaiono come `voice: { seconds }`, senza il file audio.
 
 ## Dati
 
@@ -43,7 +43,7 @@ Gli agenti sono sessioni che lavorano a turni. Per farli reagire a un tuo messag
 **Una routine per tutti** (consigliata):
 1. Su claude.ai/code/routines crea la routine "Chat InLab", trigger **API**, con le variabili d'ambiente `CHAT_URL` e `CHAT_TOKEN` e la rete che raggiunge il dominio della chat. Copia **Fire URL** e **token** (il token si vede una volta sola).
 2. Prompt della routine:
-   > Nel blocco routine-fire-payload c'è l'agente destinatario ("Agente destinatario: ID") e l'avviso di un nuovo messaggio del titolare nella chat InLab. Assumi il ruolo di quell'agente (id: sito, direttore, seo, blog, performance, competitor, sicurezza) e rispetta le regole di CLAUDE.md per quel ruolo: non modificare nulla fuori dalla sua area. Leggi i messaggi nuovi con `curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID&unread=1&history=20&history=20"`, esegui quanto chiesto, poi rispondi con `curl -s -X POST "$CHAT_URL/api/agent-chat" -H "Authorization: Bearer $CHAT_TOKEN" -H "Content-Type: application/json" -d '{"agent":"ID","to":"owner","text":"..."}'`. Se non c'è niente di nuovo, fermati subito. Non scrivere mai il token in file, commit o messaggi.
+   > Nel blocco routine-fire-payload c'è l'agente destinatario ("Agente destinatario: ID") e l'avviso di un nuovo messaggio del titolare nella chat InLab. Assumi il ruolo di quell'agente (id: sito, direttore, seo, blog, performance, competitor, sicurezza) e rispetta le regole di CLAUDE.md per quel ruolo: non modificare nulla fuori dalla sua area. Leggi i messaggi nuovi con `curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID&unread=1&history=40&history=40"`, esegui quanto chiesto, poi rispondi con `curl -s -X POST "$CHAT_URL/api/agent-chat" -H "Authorization: Bearer $CHAT_TOKEN" -H "Content-Type: application/json" -d '{"agent":"ID","to":"owner","text":"..."}'`. Se non c'è niente di nuovo, fermati subito. Non scrivere mai il token in file, commit o messaggi.
 3. Su Vercel: `AGENT_WAKE_URL` (Fire URL), `AGENT_WAKE_TOKEN` (token della routine), `AGENT_GROUP_WAKE` (es. `direttore`). Redeploy.
 
 Per una routine per agente: stesse variabili con il nome dell'agente (`AGENT_WAKE_SEO_URL`, `AGENT_WAKE_SEO_TOKEN`), che hanno la precedenza.
@@ -57,3 +57,11 @@ Dal pulsante con la graffetta si allega un file (immagini, PDF, testo, CSV, JSON
 Gli agenti vedono `file: { name, mime, size }` nei messaggi e lo scaricano con:
 `curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID&attachment=<id del messaggio>" > allegato.json` — la risposta è `{name, mime, b64}`; per salvarlo: `jq -r .b64 allegato.json | base64 -d > nome-file`. Le immagini si possono poi aprire con lo strumento di lettura file (Read). La sveglia indica "con allegato".
 Per file più grandi servirebbe un archivio esterno (Firebase Storage o Cloudinary).
+
+## Memoria: tutte le chat sono salvate
+
+Ogni messaggio resta nel database. Ogni sveglia parte da una sessione nuova, ma legge gli ultimi 40 messaggi come contesto (`history`). Per ritrovare discorsi più vecchi, l'agente li cerca nel passato con gli stessi comandi:
+- per data: `...&unread=1&from=2026-10-24T00:00:00Z&to=2026-10-25T00:00:00Z` ("ieri");
+- per parola: `...&q=lead`;
+- o entrambi. Si possono usare insieme a `&history=100` per avere più risultati (la ricerca guarda gli ultimi 1000 messaggi).
+Prompt consigliato per gli agenti: "Se il titolare ti chiede di un discorso di prima e non lo trovi in `history`, cercalo con `from`/`to` (ieri = giorno precedente) o `q`. Non dire che non ricordi senza aver cercato."

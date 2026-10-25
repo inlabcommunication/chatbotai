@@ -7,7 +7,8 @@
  *  GET   ?agent=seo&unread=1            → messaggi rivolti a `agent` (privati e di gruppo) che non ha ancora letto
  *  GET   ?agent=seo&attachment=<id messaggio> → scarica l'allegato del messaggio: {name, mime, b64}
  *  GET   ?agent=seo&since=ISO&limit=50  → oppure quelli successivi alla data `since`
- *        &history=N                     → `history`: gli ultimi N (default 20, 0 = nessuno) messaggi delle sue conversazioni, come contesto
+ *        &history=N                     → `history`: gli ultimi N (default 40, max 100, 0 = nessuno) messaggi delle sue conversazioni, come contesto
+ *        &from=ISO&to=ISO&q=parola      → cerca nel passato (intervallo di date e/o parola) invece degli ultimi N
  */
 import type { VercelRequest, VercelResponse } from "./_lib/types";
 import { FieldValue } from "firebase-admin/firestore";
@@ -76,23 +77,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         toMark.forEach((m: any) => batch.update(m.ref, { readBy: FieldValue.arrayUnion(agent) }));
         await batch.commit().catch(() => {});
       }
-      // Contesto: gli ultimi messaggi delle conversazioni dell'agente (con il titolare, nel gruppo, con altri agenti),
-      // già letti o no, senza duplicare i non letti e senza segnarli come letti
-      // la cronologia c'è sempre (20 messaggi), anche con prompt vecchi; history=0 la toglie
-      const histRaw = req.query.history === undefined ? 20 : Number(req.query.history);
-      const histN = Math.min(50, Math.max(0, Number.isFinite(histRaw) ? histRaw : 20));
+      // Contesto: i messaggi delle conversazioni dell'agente (con il titolare, nel gruppo, con altri agenti), già letti o no,
+      // senza duplicare i non letti e senza segnarli come letti. Di default gli ultimi 40; con from/to (date ISO) e/o q (parola)
+      // si cerca nel passato: tutto è salvato nel database.
+      const histRaw = req.query.history === undefined ? 40 : Number(req.query.history);
+      const histN = Math.min(100, Math.max(0, Number.isFinite(histRaw) ? histRaw : 40));
+      const fromQ = str(String(req.query.from || ""), 40), toQ = str(String(req.query.to || ""), 40);
+      const q = str(String(req.query.q || ""), 80).toLowerCase();
       let history: any[] = [];
       if (histN) {
         const ids = new Set(docs.map((m: any) => m.id));
-        const snap = await db.collection("agent_messages").orderBy("createdAt", "desc").limit(300).get();
-        history = snap.docs.map((d): any => ({ id: d.id, ...d.data() }))
-          .filter((m: any) => !ids.has(m.id) && (m.from === agent || m.to === agent || m.to === "group"))
+        let col: any = db.collection("agent_messages");
+        if (fromQ) col = col.where("createdAt", ">=", fromQ);
+        if (toQ) col = col.where("createdAt", "<", toQ);
+        const snap = await col.orderBy("createdAt", "desc").limit(fromQ || toQ || q ? 1000 : 300).get();
+        history = snap.docs.map((d: any): any => ({ id: d.id, ...d.data() }))
+          .filter((m: any) => !ids.has(m.id) && (m.from === agent || m.to === agent || m.to === "group")
+            && (!q || String(m.text || "").toLowerCase().includes(q)))
           .slice(0, histN).reverse()
           .map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined, file: m.file ? { name: m.file.name, mime: m.file.mime, size: m.file.size } : undefined }));
       }
       const messages = docs.map((m: any) => ({ id: m.id, from: m.from, to: m.to, createdAt: m.createdAt, text: m.text || "", voice: m.audio ? { seconds: m.audio.sec } : undefined, file: m.file ? { name: m.file.name, mime: m.file.mime, size: m.file.size } : undefined }));
       return res.status(200).json(histN ? {
-        note: "messages = messaggi nuovi a cui rispondere. history = ultimi messaggi già scambiati (con il titolare, nel gruppo, con altri agenti): serve a capire il contesto, non risponderci. Tu parti da una sessione nuova a ogni sveglia e non ricordi le conversazioni precedenti: se ti chiedono di un discorso di prima, cercalo in history.",
+        note: "messages = messaggi nuovi a cui rispondere. history = ultimi messaggi già scambiati (con il titolare, nel gruppo, con altri agenti): serve a capire il contesto, non risponderci. Tu parti da una sessione nuova a ogni sveglia e non ricordi le conversazioni precedenti, ma tutte le chat sono salvate: se ti chiedono di un discorso di giorni fa e non è in history, cerca nel passato con gli stessi comandi aggiungendo &from=DATA_ISO&to=DATA_ISO (intervallo) e/o &q=PAROLA.",
         messages, history,
       } : { messages });
     }
