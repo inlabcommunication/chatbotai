@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = str((req.body || {}).id, 40);
   if (!id) return res.status(400).json({ error: "Messaggio mancante" });
   try {
-    return res.status(200).json({ ok: true, wake: await wakeForMessage(getAdminDb(), id) });
+    return res.status(200).json({ ok: true, wake: await wakeForMessage(getAdminDb(), id, true) });
   } catch (e) {
     console.error("Notify error:", e);
     return res.status(500).json({ error: "Errore interno" });

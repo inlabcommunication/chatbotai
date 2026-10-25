@@ -23,9 +23,9 @@ POST /api/agent-chat        Authorization: Bearer <AGENT_CHAT_TOKEN>
 `agent`: `sito`, `direttore`, `seo`, `blog`, `performance`, `competitor`, `sicurezza`. `to`: `owner`, `group` oppure un altro agente (lo scambio compare in "Cosa si dicono tra loro").
 
 ```
-GET /api/agent-chat?agent=seo&since=2026-10-23T08:00:00.000Z
+GET /api/agent-chat?agent=seo&unread=1
 ```
-Restituisce i messaggi (privati del titolare e di gruppo) rivolti a quell'agente. I vocali compaiono come `voice: { seconds }`, senza il file audio.
+Restituisce i messaggi (privati e di gruppo) rivolti a quell'agente che non ha ancora letto, e li segna come letti (spunte blu). In alternativa `since=<data ISO>`. I vocali compaiono come `voice: { seconds }`, senza il file audio.
 
 ## Dati
 
@@ -43,9 +43,9 @@ Gli agenti sono sessioni che lavorano a turni. Per farli reagire a un tuo messag
 **Una routine per tutti** (consigliata):
 1. Su claude.ai/code/routines crea la routine "Chat InLab", trigger **API**, con le variabili d'ambiente `CHAT_URL` e `CHAT_TOKEN` e la rete che raggiunge il dominio della chat. Copia **Fire URL** e **token** (il token si vede una volta sola).
 2. Prompt della routine:
-   > Nel blocco routine-fire-payload c'è l'agente destinatario ("Agente destinatario: ID") e l'avviso di un nuovo messaggio del titolare nella chat InLab. Assumi il ruolo di quell'agente (id: sito, direttore, seo, blog, performance, competitor, sicurezza) e rispetta le regole di CLAUDE.md per quel ruolo: non modificare nulla fuori dalla sua area. Leggi i messaggi nuovi con `curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID&since=<ISO di un'ora fa>"`, esegui quanto chiesto, poi rispondi con `curl -s -X POST "$CHAT_URL/api/agent-chat" -H "Authorization: Bearer $CHAT_TOKEN" -H "Content-Type: application/json" -d '{"agent":"ID","to":"owner","text":"..."}'`. Se non c'è niente di nuovo, fermati subito. Non scrivere mai il token in file, commit o messaggi.
+   > Nel blocco routine-fire-payload c'è l'agente destinatario ("Agente destinatario: ID") e l'avviso di un nuovo messaggio del titolare nella chat InLab. Assumi il ruolo di quell'agente (id: sito, direttore, seo, blog, performance, competitor, sicurezza) e rispetta le regole di CLAUDE.md per quel ruolo: non modificare nulla fuori dalla sua area. Leggi i messaggi nuovi con `curl -s -H "Authorization: Bearer $CHAT_TOKEN" "$CHAT_URL/api/agent-chat?agent=ID&unread=1"`, esegui quanto chiesto, poi rispondi con `curl -s -X POST "$CHAT_URL/api/agent-chat" -H "Authorization: Bearer $CHAT_TOKEN" -H "Content-Type: application/json" -d '{"agent":"ID","to":"owner","text":"..."}'`. Se non c'è niente di nuovo, fermati subito. Non scrivere mai il token in file, commit o messaggi.
 3. Su Vercel: `AGENT_WAKE_URL` (Fire URL), `AGENT_WAKE_TOKEN` (token della routine), `AGENT_GROUP_WAKE` (es. `direttore`). Redeploy.
 
 Per una routine per agente: stesse variabili con il nome dell'agente (`AGENT_WAKE_SEO_URL`, `AGENT_WAKE_SEO_TOKEN`), che hanno la precedenza.
 
-Limiti: al massimo 30 sveglie l'ora per agente (e 30 l'ora in tutto per una routine condivisa). I messaggi tra agenti non svegliano nessuno (evita catene infinite).
+Limiti e regole per risparmiare crediti: al massimo 30 sveglie l'ora per agente (30 in tutto per una routine condivisa); un messaggio identico entro 1 minuto o inviato entro 15 secondi dalla sveglia precedente non ne causa un'altra (l'agente legge comunque tutto ciò che non ha letto); i vocali non svegliano nessuno; i messaggi tra agenti non svegliano nessuno (evita catene infinite). L'esito di ogni sveglia (inviata, fallita, saltata e perché) resta nel campo `wake` del messaggio ed è visibile nell'app: spunte (tocca per i dettagli) e striscia rossa con "Riprova" se l'agente non è stato avvisato.
