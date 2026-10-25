@@ -1,0 +1,17 @@
+{
+  "name": "Chat InLab",
+  "short_name": "Chat InLab",
+  "description": "Chat privata con gli agenti che gestiscono il sito.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b141a",
+  "theme_color": "#202c33",
+  "lang": "it",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
