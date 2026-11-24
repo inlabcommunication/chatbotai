@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLeads, authHeaders } from './store';
-import { STATUSES, opportunity, mobileWhatsApp, waLink, draftMessage, type Lead, type Status } from './model';
+import { STATUSES, opportunity, mobileWhatsApp, waLink, draftMessage, type Lead, type Status, type LandingAudit, type AdsInfo } from './model';
 
 const CATEGORIES = ['ristorante', 'pizzeria', 'bar', 'bnb', 'hotel', 'agriturismo', 'parrucchiere', 'dentista', 'palestra', 'abbigliamento', 'officina'];
 
@@ -36,6 +36,23 @@ export default function App() {
       if (!r.ok) throw new Error(d.error);
       patch(l.id, { audit: d, auditedAt: new Date().toISOString(), status: l.status === 'nuovo' ? 'analizzato' : l.status });
     } catch (e) { setErr(`Audit non riuscito: ${(e as Error).message}`); }
+  }
+
+  async function checkAds(l: Lead) {
+    try {
+      const r = await fetch(`/api/ads?name=${encodeURIComponent(l.name)}`, { headers: authHeaders() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      patch(l.id, { ads: { ...d, checkedAt: new Date().toISOString() } as AdsInfo });
+    } catch (e) { setErr(`Controllo ads non riuscito: ${(e as Error).message}`); }
+  }
+  async function analyzeLandingUrl(l: Lead, url: string) {
+    try {
+      const r = await fetch('/api/landing', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ url, name: l.name, category: l.category }) });
+      const d = (await r.json()) as LandingAudit & { error?: string };
+      if (!r.ok) throw new Error(d.error);
+      patch(l.id, { landings: [...(l.landings ?? []).filter((x) => x.url !== d.url), d] });
+    } catch (e) { setErr(`Analisi landing non riuscita: ${(e as Error).message}`); }
   }
 
   const rows = useMemo(() => leads
@@ -74,7 +91,7 @@ export default function App() {
               ))}
             </div>
           </section>
-          <section className="card">{sel ? <Detail l={sel} patch={(p) => patch(sel.id, p)} audit={() => audit(sel)} remove={() => { remove(sel.id); setSelId(null); }} /> : <p className="muted">Seleziona un lead per vedere analisi e messaggio.</p>}</section>
+          <section className="card">{sel ? <Detail l={sel} patch={(p) => patch(sel.id, p)} audit={() => audit(sel)} checkAds={() => checkAds(sel)} landing={(u) => analyzeLandingUrl(sel, u)} remove={() => { remove(sel.id); setSelId(null); }} /> : <p className="muted">Seleziona un lead per vedere analisi e messaggio.</p>}</section>
         </main>
       ) : (
         <main><div className="kan">{STATUSES.map((s) => (
@@ -86,7 +103,9 @@ export default function App() {
   );
 }
 
-function Detail({ l, patch, audit, remove }: { l: Lead; patch: (p: Partial<Lead>) => void; audit: () => void; remove: () => void }) {
+function Detail({ l, patch, audit, remove, checkAds, landing }: { l: Lead; patch: (p: Partial<Lead>) => void; audit: () => void; remove: () => void; checkAds: () => void; landing: (u: string) => Promise<void> }) {
+  const [lpUrl, setLpUrl] = useState('');
+  const [lpBusy, setLpBusy] = useState(false);
   const o = opportunity(l);
   const [msg, setMsg] = useState('');
   const text = msg || draftMessage(l);
@@ -107,6 +126,32 @@ function Detail({ l, patch, audit, remove }: { l: Lead; patch: (p: Partial<Lead>
         {a.issues.length === 0 && <p>Nessun problema evidente.</p>}
         {Object.entries(a.social).filter(([, v]) => v).map(([k, v]) => <span key={k} className="badge"><a href={v} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>{k}</a></span>)}
       </>)}
+      <h3>Ads e landing</h3>
+      <div className="row">
+        <button className="sec" onClick={checkAds}>Controlla ads attive</button>
+        <a className="sec" style={{ textDecoration: 'none', color: 'inherit', padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 8 }} target="_blank" rel="noreferrer" href={l.ads?.libraryUrl ?? `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=IT&q=${encodeURIComponent(l.name)}&search_type=keyword_unordered&media_type=all`}>Apri Ads Library ↗</a>
+        <label className="muted"><input type="checkbox" checked={!!l.runsAds} onChange={(e) => patch({ runsAds: e.target.checked })} /> fa ads (verificato a mano)</label>
+      </div>
+      {l.ads?.needsToken && <p className="muted">Controllo automatico non attivo (manca <code>META_AD_LIBRARY_TOKEN</code>): apri la Ads Library, e se vedi annunci spunta "fa ads" e incolla qui sotto l'URL della pagina di destinazione.</p>}
+      {l.ads && !l.ads.needsToken && <p>{l.ads.ads.length ? <b className="media">● {l.ads.ads.length} annunci attivi trovati</b> : <span className="muted">Nessun annuncio attivo trovato per questo nome.</span>}</p>}
+      {l.ads?.ads.map((a, k) => (
+        <div key={k} className="item" style={{ cursor: 'default' }}>
+          <small>{a.pageName} · da {a.startedAt ?? '?'} · {a.platforms.join(', ')}{a.leadGenLikely && <b className="media"> · probabile lead generation</b>}</small>
+          <div>{a.text || <span className="muted">(testo non disponibile)</span>}</div>
+          <div className="row">{a.landingHints.map((h) => <button key={h} className="sec" onClick={() => { setLpUrl(h); }}>{h} → analizza</button>)}{a.snapshotUrl && <a href={a.snapshotUrl} target="_blank" rel="noreferrer">vedi annuncio ↗</a>}</div>
+        </div>))}
+      <div className="row" style={{ marginTop: 8 }}>
+        <input style={{ flex: 1 }} placeholder="URL della landing delle ads" value={lpUrl} onChange={(e) => setLpUrl(e.target.value)} />
+        <button className="pri" disabled={lpBusy || lpUrl.length < 4} onClick={async () => { setLpBusy(true); await landing(lpUrl); setLpBusy(false); }}>{lpBusy ? 'Analizzo…' : 'Analizza landing'}</button>
+      </div>
+      {l.landings?.map((x) => (
+        <div key={x.url} className="card" style={{ marginTop: 10 }}>
+          <b>{x.url}</b> — voto landing <span className="score">{x.score}/10</span>
+          <p className="muted">Pixel Meta: {x.tracking.metaPixel ? 'sì' : x.tracking.gtm ? 'via Tag Manager?' : 'NO'} · campi modulo: {x.forms.count ? x.forms.maxFields : 'nessun modulo'} · WhatsApp/telefono: {x.hasPhoneOrWhatsapp ? 'sì' : 'no'}{x.pagespeed && <> · velocità mobile {Math.round(x.pagespeed.performance * 100)}</>}</p>
+          {x.issues.map((i, k) => <p key={k} style={{ margin: '4px 0' }}><b className={i.severity}>● {i.problem}</b><br /><span className="muted">→ {i.proposal}</span></p>)}
+          <h3>Proposta di landing ottimizzata</h3>
+          <ol style={{ paddingLeft: 18, margin: 0 }}>{x.proposal.map((p) => <li key={p.section}><b>{p.section}</b>: {p.content}</li>)}</ol>
+        </div>))}
       <h3>Messaggio WhatsApp</h3>
       <textarea value={text} onChange={(e) => setMsg(e.target.value)} />
       <div className="row" style={{ marginTop: 8 }}>

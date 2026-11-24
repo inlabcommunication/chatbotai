@@ -1,21 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authorized } from './_lib/auth.js';
 import { safeUrl } from './_lib/ssrf.js';
+import { pagespeed } from './_lib/psi.js';
 import { analyzeHtml, finalizeScore, unreachable, type SiteAudit } from './_lib/analyze.js';
-
-async function pagespeed(url: string): Promise<SiteAudit['pagespeed']> {
-  const key = process.env.PAGESPEED_API_KEY;
-  const qs = new URLSearchParams({ url, strategy: 'mobile' });
-  for (const c of ['performance', 'seo', 'accessibility', 'best-practices']) qs.append('category', c);
-  if (key) qs.set('key', key);
-  try {
-    const r = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${qs}`, { signal: AbortSignal.timeout(22000) });
-    if (!r.ok) return undefined;
-    const c = ((await r.json()) as { lighthouseResult?: { categories?: Record<string, { score: number | null }> } }).lighthouseResult?.categories;
-    if (!c) return undefined;
-    return { performance: c.performance?.score ?? 0, seo: c.seo?.score ?? 0, accessibility: c.accessibility?.score ?? 0, bestPractices: c['best-practices']?.score ?? 0 };
-  } catch { return undefined; }
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!authorized(req, res)) return;
