@@ -1,168 +1,77 @@
-import { useMemo, useState } from 'react';
-import { useLeads, authHeaders } from './store';
-import { STATUSES, opportunity, mobileWhatsApp, waLink, draftMessage, type Lead, type Status, type LandingAudit, type AdsInfo } from './model';
+import { useCallback, useEffect, useState } from 'react';
+import { useLeads } from './store';
+import { type Lead, type Status } from './model';
+import { fullAnalysis } from './actions';
+import { pool } from './api';
+import Today from './Today';
+import Find from './Find';
+import Leads from './Leads';
+import LeadPanel from './LeadPanel';
+import Queue from './Queue';
+import Pipeline from './Pipeline';
+import Strategy from './Strategy';
+import Setup, { loadStatus, type Status as ApiStatus } from './Setup';
+import Report from './Report';
+import { cloudConfigured } from './cloud';
 
-const CATEGORIES = ['ristorante', 'pizzeria', 'bar', 'bnb', 'hotel', 'agriturismo', 'parrucchiere', 'dentista', 'palestra', 'abbigliamento', 'officina'];
+type Tab = 'oggi' | 'trova' | 'lead' | 'coda' | 'pipeline' | 'strategia' | 'setup';
+const TABS: [Tab, string, string][] = [['oggi', '🏠', 'Oggi'], ['trova', '🔎', 'Trova'], ['lead', '📋', 'Lead'], ['coda', '📨', 'Coda'], ['pipeline', '📊', 'Pipeline'], ['strategia', '💬', 'Strategia'], ['setup', '⚙️', 'Collegamenti']];
 
 export default function App() {
-  const { leads, upsertMany, patch, remove } = useLeads();
-  const [view, setView] = useState<'lead' | 'crm'>('lead');
-  const [category, setCategory] = useState('ristorante');
-  const [place, setPlace] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
+  const { leads, upsertMany, patch, patchMany, remove, user, authReady, syncError } = useLeads();
+  const [tab, setTab] = useState<Tab>('oggi');
   const [selId, setSelId] = useState<string | null>(null);
-  const [fStatus, setFStatus] = useState<'' | Status>('');
-  const [fNoSite, setFNoSite] = useState(false);
-  const [q, setQ] = useState('');
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [focus, setFocus] = useState<string[]>([]);
+  const [err, setErr] = useState('');
+  const [job, setJob] = useState<{ label: string; done: number; total: number } | null>(null);
+  const [status, setStatus] = useState<ApiStatus | null>(null);
+  const [report, setReport] = useState<Lead | null>(null);
+  const reload = useCallback(() => { loadStatus().then(setStatus).catch(() => setStatus(null)); }, []);
+  useEffect(reload, [reload]);
 
-  async function search() {
-    setBusy(true); setErr('');
-    try {
-      const r = await fetch(`/api/search?category=${category}&place=${encodeURIComponent(place)}`, { headers: authHeaders() });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? 'Errore');
-      upsertMany(d.leads.map((l: Lead) => ({ ...l, place, status: 'nuovo' as Status, notes: '' })));
-      if (!d.count) setErr('Nessun risultato: prova il nome esatto del comune (es. "Lecce") o un\'altra categoria.');
-    } catch (e) { setErr(String((e as Error).message)); } finally { setBusy(false); }
-  }
-
-  async function audit(l: Lead) {
-    if (!l.website) return;
-    patch(l.id, { auditedAt: undefined });
-    try {
-      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ url: l.website }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      patch(l.id, { audit: d, auditedAt: new Date().toISOString(), status: l.status === 'nuovo' ? 'analizzato' : l.status });
-    } catch (e) { setErr(`Audit non riuscito: ${(e as Error).message}`); }
-  }
-
-  async function checkAds(l: Lead) {
-    try {
-      const r = await fetch(`/api/ads?name=${encodeURIComponent(l.name)}`, { headers: authHeaders() });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      patch(l.id, { ads: { ...d, checkedAt: new Date().toISOString() } as AdsInfo });
-    } catch (e) { setErr(`Controllo ads non riuscito: ${(e as Error).message}`); }
-  }
-  async function analyzeLandingUrl(l: Lead, url: string) {
-    try {
-      const r = await fetch('/api/landing', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ url, name: l.name, category: l.category }) });
-      const d = (await r.json()) as LandingAudit & { error?: string };
-      if (!r.ok) throw new Error(d.error);
-      patch(l.id, { landings: [...(l.landings ?? []).filter((x) => x.url !== d.url), d] });
-    } catch (e) { setErr(`Analisi landing non riuscita: ${(e as Error).message}`); }
-  }
-
-  const rows = useMemo(() => leads
-    .filter((l) => (!fStatus || l.status === fStatus) && (!fNoSite || !l.website) && (!q || (l.name + l.city + l.place).toLowerCase().includes(q.toLowerCase())))
-    .map((l) => ({ l, o: opportunity(l) }))
-    .sort((a, b) => b.o.score - a.o.score), [leads, fStatus, fNoSite, q]);
   const sel = leads.find((l) => l.id === selId) ?? null;
+  const open = (id: string) => { setSelId(id); setTab('lead'); };
+  const mark = (ids: string[], s: Status = 'selezionato') => patchMany(ids, { status: s });
 
+  async function batchAnalyze(ids: string[]) {
+    const todo = leads.filter((l) => ids.includes(l.id));
+    setErr(''); setJob({ label: 'Analisi in corso', done: 0, total: todo.length });
+    await pool(todo, 2, async (l) => { patch(l.id, await fullAnalysis(l)); }, (done) => setJob({ label: 'Analisi in corso', done, total: todo.length }));
+    setJob(null); setChecked(new Set());
+  }
+
+  if (!authReady) return <div className="empty">Caricamento…</div>;
+  if (cloudConfigured && !user && tab !== 'setup') return (
+    <div className="app-shell"><div className="card wide" style={{ margin: 24 }}><h2>Accedi</h2><p className="muted">Questa app è privata.</p><Setup status={status} reload={reload} user={user} syncError={syncError} /></div></div>);
+
+  const aiReady = !!status?.ai;
   return (
     <>
-      <header>
-        <h1>Lead Finder</h1>
-        <nav><button className={view === 'lead' ? 'on' : ''} onClick={() => setView('lead')}>Lead ({leads.length})</button><button className={view === 'crm' ? 'on' : ''} onClick={() => setView('crm')}>CRM</button></nav>
-      </header>
-      {view === 'lead' ? (
+      <div className="app-shell">
+        <header><h1>Lead Finder</h1><button className="sec gear" onClick={() => setTab('setup')}>⚙️</button>
+          <nav className="top">{TABS.map(([k, ic, label]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{ic} {label}{k === 'coda' && leads.filter((l) => l.status === 'selezionato').length > 0 && <i className="dot" />}</button>)}</nav>
+        </header>
+        {job && <div className="jobbar">{job.label}: {job.done}/{job.total}<div className="progress"><div style={{ width: `${(job.done / Math.max(1, job.total)) * 100}%` }} /></div></div>}
+        {err && <div className="errbar" onClick={() => setErr('')}>⚠️ {err} <span className="muted">(tocca per chiudere)</span></div>}
+        {cloudConfigured && syncError && <div className="errbar">Sincronizzazione: {syncError}</div>}
         <main>
-          <section className="card">
-            <div className="row">
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
-              <input placeholder="Comune o provincia (es. Lecce)" value={place} onChange={(e) => setPlace(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && place && search()} />
-              <button className="pri" disabled={busy || place.trim().length < 2} onClick={search}>{busy ? 'Cerco…' : 'Cerca'}</button>
-            </div>
-            {err && <p className="alta">{err}</p>}
-            <div className="row" style={{ marginTop: 10 }}>
-              <input placeholder="Filtra per nome/zona" value={q} onChange={(e) => setQ(e.target.value)} />
-              <select value={fStatus} onChange={(e) => setFStatus(e.target.value as Status | '')}><option value="">tutti gli stati</option>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
-              <label className="muted"><input type="checkbox" checked={fNoSite} onChange={(e) => setFNoSite(e.target.checked)} /> senza sito</label>
-            </div>
-            <div className="list">
-              {rows.length === 0 && <p className="muted">Nessun lead. Cerca una categoria in una zona per iniziare.</p>}
-              {rows.map(({ l, o }) => (
-                <div key={l.id} className={'item' + (l.id === selId ? ' sel' : '')} onClick={() => setSelId(l.id)}>
-                  <b>{l.name}</b> <span className="badge">{l.status}</span><br />
-                  <small>{l.category} · {l.city || l.place} · opportunità <b className="score">{o.score}</b>{l.audit && <> · sito {l.audit.score}/10</>}{!l.website && ' · senza sito'}</small>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="card">{sel ? <Detail l={sel} patch={(p) => patch(sel.id, p)} audit={() => audit(sel)} checkAds={() => checkAds(sel)} landing={(u) => analyzeLandingUrl(sel, u)} remove={() => { remove(sel.id); setSelId(null); }} /> : <p className="muted">Seleziona un lead per vedere analisi e messaggio.</p>}</section>
+          {tab === 'oggi' && <Today leads={leads} open={open} goFind={() => setTab('trova')} goLeads={() => setTab('lead')} goQueue={() => setTab('coda')} onMark={(ids) => { mark(ids); setTab('coda'); }} />}
+          {tab === 'trova' && <Find onAdd={upsertMany} onDone={() => setTab('lead')} />}
+          {tab === 'lead' && <div className={'split' + (sel ? ' has-sel' : '')}>
+            <Leads leads={leads} selId={selId} setSelId={setSelId} checked={checked} setChecked={setChecked} onBatchAnalyze={batchAnalyze} onMark={(ids, s) => mark(ids, s)}
+              onStrategy={(ids) => { setFocus(ids); setTab('strategia'); }} goFind={() => setTab('trova')} />
+            <div className="card detail">{sel ? <LeadPanel key={sel.id} l={sel} patch={(p) => patch(sel.id, p)} remove={() => { remove(sel.id); setSelId(null); }} aiReady={aiReady}
+              onBack={() => setSelId(null)} onReport={() => setReport(sel)} setErr={setErr} /> : <p className="muted">Scegli un lead dalla lista per vedere analisi, messaggio e storico.</p>}</div>
+          </div>}
+          {tab === 'coda' && <Queue leads={leads} patch={patch} goLeads={() => setTab('lead')} />}
+          {tab === 'pipeline' && <Pipeline leads={leads} patch={patch} open={open} />}
+          {tab === 'strategia' && <Strategy leads={leads} focusIds={focus} aiReady={aiReady} goSetup={() => setTab('setup')} />}
+          {tab === 'setup' && <Setup status={status} reload={reload} user={user} syncError={syncError} />}
         </main>
-      ) : (
-        <main><div className="kan">{STATUSES.map((s) => (
-          <div key={s} className="card"><h3>{s} ({leads.filter((l) => l.status === s).length})</h3>
-            {leads.filter((l) => l.status === s).map((l) => <div key={l.id} className="item" onClick={() => { setSelId(l.id); setView('lead'); }}><b>{l.name}</b><br /><small>{l.city || l.place}{l.followUpAt && ` · ricontatto ${l.followUpAt}`}{l.callAt && ` · call ${l.callAt.replace('T', ' ')}`}</small></div>)}
-          </div>))}</div></main>
-      )}
-    </>
-  );
-}
-
-function Detail({ l, patch, audit, remove, checkAds, landing }: { l: Lead; patch: (p: Partial<Lead>) => void; audit: () => void; remove: () => void; checkAds: () => void; landing: (u: string) => Promise<void> }) {
-  const [lpUrl, setLpUrl] = useState('');
-  const [lpBusy, setLpBusy] = useState(false);
-  const o = opportunity(l);
-  const [msg, setMsg] = useState('');
-  const text = msg || draftMessage(l);
-  const wa = waLink(l, text);
-  const a = l.audit;
-  return (
-    <>
-      <div className="row" style={{ justifyContent: 'space-between' }}><h2 style={{ margin: 0 }}>{l.name}</h2><button className="sec" onClick={remove}>Elimina</button></div>
-      <p className="muted">{[l.address, l.postcode, l.city].filter(Boolean).join(' ') || l.place} · {l.category}</p>
-      <p>📞 {l.phone || '—'} · ✉️ {l.email || a?.emails[0] || '—'}<br />🌐 {l.website ? <a href={l.website.startsWith('http') ? l.website : 'https://' + l.website} target="_blank" rel="noreferrer">{l.website}</a> : <span className="alta">nessun sito noto</span>}</p>
-      <p>Opportunità: <b className="score">{o.score}/100</b> <span className="muted">— {o.reasons.join(', ') || 'da analizzare'}</span></p>
-      <div className="row"><select value={l.status} onChange={(e) => patch({ status: e.target.value as Status })}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
-        {l.website && <button className="sec" onClick={audit}>{a ? 'Rifai analisi sito' : 'Analizza sito'}</button>}</div>
-      {a && (<>
-        <h3>Analisi sito — voto <span className="score">{a.score}/10</span>{a.builder && <> · {a.builder}</>}</h3>
-        {a.pagespeed && <p className="muted">PageSpeed mobile: velocità {Math.round(a.pagespeed.performance * 100)} · SEO {Math.round(a.pagespeed.seo * 100)} · accessibilità {Math.round(a.pagespeed.accessibility * 100)}</p>}
-        {a.issues.map((i, k) => <p key={k} style={{ margin: '4px 0' }}><b className={i.severity}>● {i.problem}</b><br /><span className="muted">→ {i.proposal}</span></p>)}
-        {a.issues.length === 0 && <p>Nessun problema evidente.</p>}
-        {Object.entries(a.social).filter(([, v]) => v).map(([k, v]) => <span key={k} className="badge"><a href={v} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>{k}</a></span>)}
-      </>)}
-      <h3>Ads e landing</h3>
-      <div className="row">
-        <button className="sec" onClick={checkAds}>Controlla ads attive</button>
-        <a className="sec" style={{ textDecoration: 'none', color: 'inherit', padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 8 }} target="_blank" rel="noreferrer" href={l.ads?.libraryUrl ?? `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=IT&q=${encodeURIComponent(l.name)}&search_type=keyword_unordered&media_type=all`}>Apri Ads Library ↗</a>
-        <label className="muted"><input type="checkbox" checked={!!l.runsAds} onChange={(e) => patch({ runsAds: e.target.checked })} /> fa ads (verificato a mano)</label>
+        <nav className="bottom">{TABS.filter(([k]) => k !== 'setup').map(([k, ic, label]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}><span>{ic}</span>{label}</button>)}</nav>
       </div>
-      {l.ads?.needsToken && <p className="muted">Controllo automatico non attivo (manca <code>META_AD_LIBRARY_TOKEN</code>): apri la Ads Library, e se vedi annunci spunta "fa ads" e incolla qui sotto l'URL della pagina di destinazione.</p>}
-      {l.ads && !l.ads.needsToken && <p>{l.ads.ads.length ? <b className="media">● {l.ads.ads.length} annunci attivi trovati</b> : <span className="muted">Nessun annuncio attivo trovato per questo nome.</span>}</p>}
-      {l.ads?.ads.map((a, k) => (
-        <div key={k} className="item" style={{ cursor: 'default' }}>
-          <small>{a.pageName} · da {a.startedAt ?? '?'} · {a.platforms.join(', ')}{a.leadGenLikely && <b className="media"> · probabile lead generation</b>}</small>
-          <div>{a.text || <span className="muted">(testo non disponibile)</span>}</div>
-          <div className="row">{a.landingHints.map((h) => <button key={h} className="sec" onClick={() => { setLpUrl(h); }}>{h} → analizza</button>)}{a.snapshotUrl && <a href={a.snapshotUrl} target="_blank" rel="noreferrer">vedi annuncio ↗</a>}</div>
-        </div>))}
-      <div className="row" style={{ marginTop: 8 }}>
-        <input style={{ flex: 1 }} placeholder="URL della landing delle ads" value={lpUrl} onChange={(e) => setLpUrl(e.target.value)} />
-        <button className="pri" disabled={lpBusy || lpUrl.length < 4} onClick={async () => { setLpBusy(true); await landing(lpUrl); setLpBusy(false); }}>{lpBusy ? 'Analizzo…' : 'Analizza landing'}</button>
-      </div>
-      {l.landings?.map((x) => (
-        <div key={x.url} className="card" style={{ marginTop: 10 }}>
-          <b>{x.url}</b> — voto landing <span className="score">{x.score}/10</span>
-          <p className="muted">Pixel Meta: {x.tracking.metaPixel ? 'sì' : x.tracking.gtm ? 'via Tag Manager?' : 'NO'} · campi modulo: {x.forms.count ? x.forms.maxFields : 'nessun modulo'} · WhatsApp/telefono: {x.hasPhoneOrWhatsapp ? 'sì' : 'no'}{x.pagespeed && <> · velocità mobile {Math.round(x.pagespeed.performance * 100)}</>}</p>
-          {x.issues.map((i, k) => <p key={k} style={{ margin: '4px 0' }}><b className={i.severity}>● {i.problem}</b><br /><span className="muted">→ {i.proposal}</span></p>)}
-          <h3>Proposta di landing ottimizzata</h3>
-          <ol style={{ paddingLeft: 18, margin: 0 }}>{x.proposal.map((p) => <li key={p.section}><b>{p.section}</b>: {p.content}</li>)}</ol>
-        </div>))}
-      <h3>Messaggio WhatsApp</h3>
-      <textarea value={text} onChange={(e) => setMsg(e.target.value)} />
-      <div className="row" style={{ marginTop: 8 }}>
-        {wa ? <a className="wa" href={wa} target="_blank" rel="noreferrer" onClick={() => patch({ status: 'inviato', contactedAt: new Date().toISOString(), followUpAt: new Date(Date.now() + 4 * 864e5).toISOString().slice(0, 10) })}>Apri su WhatsApp ({mobileWhatsApp(l)})</a>
-          : <span className="muted">Nessun cellulare disponibile (i fissi non hanno WhatsApp). Prova con email o Instagram.</span>}
-        <button className="sec" onClick={() => navigator.clipboard.writeText(text)}>Copia testo</button>
-      </div>
-      <h3>CRM</h3>
-      <div className="row"><label className="muted">Ricontatto <input type="date" value={l.followUpAt ?? ''} onChange={(e) => patch({ followUpAt: e.target.value })} /></label>
-        <label className="muted">Call <input type="datetime-local" value={l.callAt ?? ''} onChange={(e) => patch({ callAt: e.target.value, ...(e.target.value && { status: 'call' as Status }) })} /></label></div>
-      <textarea placeholder="Note, esito della call, obiezioni…" value={l.notes} onChange={(e) => patch({ notes: e.target.value })} style={{ marginTop: 8 }} />
+      {report && <Report lead={report} onClose={() => setReport(null)} />}
     </>
   );
 }

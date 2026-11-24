@@ -16,6 +16,18 @@ const CATEGORIES: Record<string, string[]> = {
   agriturismo: ['["tourism"="guest_house"]["guest_house"="agritourism"]', '["farm"="agritourism"]'],
 };
 
+/** Costruisce l'area Overpass: comune dentro regione, oppure provincia, oppure regione. */
+function areaClause(region: string, province: string, comune: string): string {
+  const adm = (lvl: number, rx: string, within?: string) => `area["boundary"="administrative"]["admin_level"="${lvl}"]["name"~"${rx}"]${within ? `(area.${within})` : ''}`;
+  const parts: string[] = [];
+  if (region) parts.push(`${adm(4, '^' + region, undefined)}->.r;`);
+  const w = region ? 'r' : undefined;
+  if (comune) parts.push(`${adm(8, '^' + comune + '$', w)}->.a;`);
+  else if (province) parts.push(`${adm(6, '^(Provincia di |Provincia autonoma di |Città metropolitana di |Libero consorzio comunale di )?' + province + '$', w)}->.a;`);
+  else parts.push('.r->.a;');
+  return parts.join('\n');
+}
+
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 
 type Tags = Record<string, string>;
@@ -46,14 +58,16 @@ function normalize(el: { type: string; id: number; lat?: number; lon?: number; c
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!authorized(req, res)) return;
   const category = String(req.query.category ?? '').toLowerCase();
-  const place = String(req.query.place ?? '').trim();
+  const safe = (v: unknown) => { const t = String(v ?? '').trim(); return /^[\p{L}0-9 '’.\-]{0,60}$/u.test(t) ? t : null; };
+  const region = safe(req.query.region), province = safe(req.query.province), comune = safe(req.query.comune);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 300);
   if (!CATEGORIES[category]) return res.status(400).json({ error: 'Categoria non valida', categories: Object.keys(CATEGORIES) });
-  if (place.length < 2 || place.length > 80 || /["\\\n]/.test(place)) return res.status(400).json({ error: 'Zona non valida' });
+  if (region === null || province === null || comune === null) return res.status(400).json({ error: 'Zona non valida' });
+  if (!region && !province && !comune) return res.status(400).json({ error: 'Indica almeno una regione, provincia o comune' });
 
   const filters = CATEGORIES[category].map((f) => `nwr(area.a)${f};`).join('\n');
   const query = `[out:json][timeout:25];
-area["boundary"="administrative"]["name"="${place}"]->.a;
+${areaClause(region, province, comune)}
 (
 ${filters}
 );
